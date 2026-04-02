@@ -532,9 +532,13 @@ function EstagiariaTab({ estagiarias, setEstagiarias, registros, entregas, onVie
 }
 
 /* ─── MAIN APP ─── */
+const ENV_URL = import.meta.env.VITE_SUPABASE_URL || "";
+const ENV_KEY = import.meta.env.VITE_SUPABASE_KEY || "";
+const ENV_API = ENV_URL && ENV_KEY ? createApi(ENV_URL, ENV_KEY) : null;
+
 export default function App() {
-  const [screen, setScreen] = useState("config");
-  const [api, setApi] = useState(null);
+  const [screen, setScreen] = useState(ENV_API ? "auth" : "config");
+  const [api, setApi] = useState(ENV_API);
   const [token, setToken] = useState("");
   const [profile, setProfile] = useState(null);
   const [demo, setDemo] = useState(false);
@@ -578,7 +582,8 @@ export default function App() {
   };
 
   const startDemo = () => { setDemo(true); setProfile(MOCK.profile); setRegistros(MOCK.registros); setEntregas(MOCK.entregas); setEstagiarias(MOCK.estagiarias); setBacklog(MOCK.backlog); setCrimes(MOCK.crimes); setActiveTab("dia"); setScreen("app"); };
-  const connect = (url, key) => { setApi(createApi(url, key)); setScreen("auth"); };
+  const connect = (url, key) => { const a = createApi(url, key); setApi(a); setScreen("auth"); };
+
   const onAuth = async (tok, usr, prof) => {
     setToken(tok); setProfile(prof);
     setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
