@@ -810,13 +810,22 @@ const ENV_URL = import.meta.env.VITE_SUPABASE_URL || "";
 const ENV_KEY = import.meta.env.VITE_SUPABASE_KEY || "";
 const ENV_API = ENV_URL && ENV_KEY ? createApi(ENV_URL, ENV_KEY) : null;
 
+const LS_TOKEN = "gp_token";
+const LS_PROFILE = "gp_profile";
+
 export default function App() {
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [screen, setScreen] = useState(ENV_API ? "auth" : "config");
+
+  // Restore session from localStorage
+  const savedToken = localStorage.getItem(LS_TOKEN) || "";
+  const savedProfile = (() => { try { return JSON.parse(localStorage.getItem(LS_PROFILE)); } catch { return null; } })();
+  const hasSession = savedToken && savedProfile && ENV_API;
+
+  const [screen, setScreen] = useState(hasSession ? "app" : ENV_API ? "auth" : "config");
   const [api, setApi] = useState(ENV_API);
-  const [token, setToken] = useState("");
-  const [profile, setProfile] = useState(null);
+  const [token, setToken] = useState(savedToken);
+  const [profile, setProfile] = useState(savedProfile);
   const [demo, setDemo] = useState(false);
   const [activeTab, setActiveTab] = useState("");
   const [selectedDate, setSelectedDate] = useState(today);
@@ -919,10 +928,42 @@ export default function App() {
     setActiveTab("dia"); setScreen("app");
   };
 
+  // On mount: if session was restored from localStorage, load data
+  useEffect(() => {
+    if (!hasSession) return;
+    const prof = savedProfile;
+    setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
+    if (prof.papel === "admin") {
+      loadData(ENV_API, savedToken, "admin");
+    } else {
+      (async () => {
+        setLoading(true);
+        try {
+          const [ents, optsData] = await Promise.all([
+            ENV_API.get("entregas", savedToken, `estagiaria_id=eq.${prof.id}&order=data_entrega.desc`),
+            ENV_API.get("opcoes", savedToken, "order=campo.asc,valor.asc"),
+          ]);
+          setEntregas(Array.isArray(ents) ? ents : []);
+          const optsMap = { ...INIT_OPTS, crime: [] };
+          (Array.isArray(optsData) ? optsData : []).forEach((o) => {
+            if (o.campo === "crime") { if (!optsMap.crime.includes(o.valor)) optsMap.crime.push(o.valor); }
+            else if (optsMap[o.campo] && !optsMap[o.campo].includes(o.valor)) optsMap[o.campo].push(o.valor);
+          });
+          optsMap.crime = sortCrimes(optsMap.crime);
+          setOpts(optsMap);
+          prevPCRef.current = new Set((Array.isArray(ents) ? ents : []).filter((e) => e.status === "precisa_correcao").map((e) => e.id));
+        } catch (e) {}
+        setLoading(false);
+      })();
+    }
+  }, []);
+
   const connect = (url, key) => { setApi(createApi(url, key)); setScreen("auth"); };
 
   const onAuth = async (tok, usr, prof) => {
     setToken(tok); setProfile(prof);
+    localStorage.setItem(LS_TOKEN, tok);
+    localStorage.setItem(LS_PROFILE, JSON.stringify(prof));
     setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
     setScreen("app");
     // For estagiária, load their own entregas properly
@@ -949,7 +990,12 @@ export default function App() {
     }
   };
 
-  const logout = () => { setScreen(demo ? "config" : "auth"); setDemo(false); setProfile(null); setToken(""); setRegistros([]); setEntregas([]); setBacklog([]); setViewAs(null); setSidebarOpen(false); };
+  const logout = () => {
+    localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem(LS_PROFILE);
+    setScreen(demo ? "config" : "auth"); setDemo(false); setProfile(null); setToken("");
+    setRegistros([]); setEntregas([]); setBacklog([]); setViewAs(null); setSidebarOpen(false);
+  };
   const pendCount = entregas.filter((e) => e.status === "pendente").length;
   const handleViewAs = (id) => { setViewAs(id); setActiveTab("registrar"); setSidebarOpen(false); };
   const exitViewAs = () => { setViewAs(null); setActiveTab("est"); };
