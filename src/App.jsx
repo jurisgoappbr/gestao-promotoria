@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { LogOut, Plus, Check, Users, Send, History, X, Bell, Save, Trash2, ChevronLeft, ChevronRight, LayoutDashboard, ClipboardList, Edit3, Eye, AlertCircle, Menu, BookOpen } from "lucide-react";
+import { LogOut, Plus, Check, Users, Send, History, X, Bell, Save, Trash2, ChevronLeft, ChevronRight, LayoutDashboard, ClipboardList, Edit3, Eye, AlertCircle, Menu, BookOpen, PanelLeftClose, PanelLeftOpen, Search, ChevronDown } from "lucide-react";
 
 const font = `'DM Sans', system-ui, sans-serif`;
 const today = new Date().toISOString().slice(0, 10);
@@ -45,9 +45,9 @@ const MOCK = {
 
 const S = {
   page: { fontFamily: font, minHeight: "100vh", display: "flex", background: "#f1f5f9", color: "#1e293b", fontSize: 14 },
-  sidebar: { width: 230, background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column", padding: "20px 0", flexShrink: 0, minHeight: "100vh" },
-  logo: { padding: "0 20px 20px", fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", borderBottom: "1px solid #1e293b" },
-  navItem: (a) => ({ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", cursor: "pointer", fontSize: 13, fontWeight: a ? 600 : 400, background: a ? "#1e293b" : "transparent", color: a ? "#fff" : "#94a3b8", borderLeft: a ? "3px solid #3b82f6" : "3px solid transparent" }),
+  sidebar: (collapsed) => ({ width: collapsed ? 56 : 230, background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column", padding: "20px 0", flexShrink: 0, minHeight: "100vh", transition: "width 0.2s ease", overflow: "hidden" }),
+  logo: { padding: "0 20px 20px", fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", borderBottom: "1px solid #1e293b", whiteSpace: "nowrap" },
+  navItem: (a, collapsed) => ({ display: "flex", alignItems: "center", gap: 10, padding: collapsed ? "10px 0" : "10px 20px", justifyContent: collapsed ? "center" : "flex-start", cursor: "pointer", fontSize: 13, fontWeight: a ? 600 : 400, background: a ? "#1e293b" : "transparent", color: a ? "#fff" : "#94a3b8", borderLeft: a ? "3px solid #3b82f6" : "3px solid transparent" }),
   main: { flex: 1, padding: "20px 28px", overflowY: "auto", maxHeight: "100vh" },
   mainMobile: { flex: 1, padding: "14px 14px", overflowY: "auto" },
   card: { background: "#fff", borderRadius: 10, padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 14 },
@@ -104,32 +104,101 @@ function Toasts({ items }) {
   );
 }
 
-/* ─── CRIME MULTI-SELECT ─── */
-function CrimeMultiSelect({ value, onChange, options }) {
+/* ─── CRIME MULTI-SELECT (searchable, collapsible) ─── */
+function CrimeMultiSelect({ value, onChange, options, allowAdd, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [newVal, setNewVal] = useState("");
+  const ref = useRef(null);
+
   const selected = parseCrimes(value);
+  const filtered = options.filter((c) => c.toLowerCase().includes(search.toLowerCase()));
+
   const toggle = (c) => {
     const next = selected.includes(c) ? selected.filter((x) => x !== c) : [...selected, c];
     onChange(joinCrimes(next));
   };
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setSearch(""); } };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const submitNew = () => {
+    const v = newVal.trim();
+    if (!v) return;
+    if (onAdd) onAdd(v);
+    toggle(v);
+    setNewVal(""); setAdding(false);
+  };
+
   return (
-    <div>
-      <div style={{ border: "1px solid #e2e8f0", borderRadius: 6, maxHeight: 150, overflowY: "auto", background: "#fff" }}>
-        {options.length === 0
-          ? <div style={{ padding: "10px 12px", fontSize: 12, color: "#94a3b8" }}>Nenhum crime cadastrado. Administrador deve cadastrar crimes no Dashboard.</div>
-          : options.map((c) => (
-            <label key={c} style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", cursor: "pointer", fontSize: 12.5, borderBottom: "1px solid #f8fafc" }}>
-              <input type="checkbox" checked={selected.includes(c)} onChange={() => toggle(c)} style={{ cursor: "pointer", accentColor: "#2563eb" }} />
-              {c}
-            </label>
-          ))}
+    <div ref={ref} style={{ position: "relative" }}>
+      {/* Trigger */}
+      <div onClick={() => setOpen((o) => !o)} style={{ border: "1px solid #e2e8f0", borderRadius: 6, padding: "7px 10px", cursor: "pointer", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, minHeight: 36 }}>
+        <span style={{ color: selected.length ? "#1e293b" : "#94a3b8" }}>
+          {selected.length === 0 ? "Selecione os crimes..." : `${selected.length} crime${selected.length > 1 ? "s" : ""} selecionado${selected.length > 1 ? "s" : ""}`}
+        </span>
+        <ChevronDown size={14} color="#94a3b8" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </div>
+
+      {/* Tags dos selecionados */}
       {selected.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
           {selected.map((c) => (
             <span key={c} style={{ background: "#dbeafe", color: "#1e40af", borderRadius: 99, padding: "2px 8px", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-              {c} <X size={10} style={{ cursor: "pointer" }} onClick={() => toggle(c)} />
+              {c} <X size={10} style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); toggle(c); }} />
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Dropdown */}
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 50, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxHeight: 260, display: "flex", flexDirection: "column" }}>
+          {/* Search */}
+          <div style={{ padding: "8px 10px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 6 }}>
+            <Search size={13} color="#94a3b8" />
+            <input autoFocus style={{ border: "none", outline: "none", fontSize: 13, fontFamily: font, flex: 1, background: "transparent" }} placeholder="Buscar crime..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+
+          {/* List */}
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            {options.length === 0 && (
+              <div style={{ padding: "12px 14px", fontSize: 12, color: "#94a3b8" }}>
+                {allowAdd ? "Nenhum crime ainda. Adicione abaixo." : "Nenhum crime cadastrado pelo Analista Jurídico."}
+              </div>
+            )}
+            {filtered.length === 0 && options.length > 0 && (
+              <div style={{ padding: "12px 14px", fontSize: 12, color: "#94a3b8" }}>Nenhum resultado para "{search}".</div>
+            )}
+            {filtered.map((c) => (
+              <label key={c} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12.5, borderBottom: "1px solid #f8fafc", background: selected.includes(c) ? "#eff6ff" : "transparent" }}>
+                <input type="checkbox" checked={selected.includes(c)} onChange={() => toggle(c)} style={{ cursor: "pointer", accentColor: "#2563eb" }} />
+                <span style={{ fontWeight: selected.includes(c) ? 600 : 400 }}>{c}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Add new (only if allowAdd) */}
+          {allowAdd && (
+            <div style={{ borderTop: "1px solid #f1f5f9", padding: "8px 10px" }}>
+              {!adding ? (
+                <button style={{ ...S.btn("ghost"), width: "100%", justifyContent: "center", fontSize: 12 }} onClick={() => setAdding(true)}><Plus size={12} /> Adicionar novo crime</button>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 10.5, color: "#64748b", marginBottom: 4 }}>Formato: <strong>número do artigo (nome do crime)</strong> — ex: <em>121 (homicídio)</em></div>
+                  <div style={{ display: "flex", gap: 5 }}>
+                    <input style={{ ...S.input, flex: 1, fontSize: 12 }} value={newVal} onChange={(e) => setNewVal(e.target.value)} placeholder="ex: 121 (homicídio)" autoFocus onKeyDown={(e) => { if (e.key === "Enter") submitNew(); if (e.key === "Escape") { setAdding(false); setNewVal(""); } }} />
+                    <button style={S.btn("success")} onClick={submitNew}><Check size={13} /></button>
+                    <button style={S.btn("ghost")} onClick={() => { setAdding(false); setNewVal(""); }}><X size={13} /></button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -255,26 +324,39 @@ function AuthScreen({ api, onAuth }) {
 }
 
 /* ─── SIDEBAR ─── */
-function Sidebar({ papel, active, setActive, nome, pendCount, onLogout, isMobile, onClose }) {
+function Sidebar({ papel, active, setActive, nome, pendCount, onLogout, isMobile, onClose, collapsed, setCollapsed }) {
   const tabs = papel === "admin"
     ? [{ key: "dia", icon: ClipboardList, label: "Dia de Trabalho" }, { key: "dash", icon: LayoutDashboard, label: "Dashboard" }, { key: "est", icon: Users, label: "Estagiárias" }]
     : [{ key: "registrar", icon: Send, label: "Registrar Entrega" }, { key: "historico", icon: History, label: "Meu Histórico" }];
   const handleNav = (key) => { setActive(key); if (isMobile && onClose) onClose(); };
+  const col = !isMobile && collapsed;
   return (
-    <div style={S.sidebar}>
+    <div style={S.sidebar(col)}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <div style={S.logo}>Gestão Promotoria</div>
-      <div style={{ padding: "14px 20px 6px", fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>Menu</div>
+      {/* Logo + collapse toggle */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: col ? "center" : "space-between", padding: col ? "0 0 20px" : "0 12px 20px 20px", borderBottom: "1px solid #1e293b" }}>
+        {!col && <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", whiteSpace: "nowrap" }}>Gestão Promotoria</span>}
+        {!isMobile && (
+          <button onClick={() => setCollapsed((c) => !c)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", display: "flex", padding: 4, flexShrink: 0 }} title={col ? "Expandir menu" : "Recolher menu"}>
+            {col ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+        )}
+      </div>
+      {!col && <div style={{ padding: "14px 20px 6px", fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>Menu</div>}
+      {col && <div style={{ padding: "10px 0" }} />}
       {tabs.map((t) => (
-        <div key={t.key} style={S.navItem(active === t.key)} onClick={() => handleNav(t.key)}>
-          <t.icon size={15} /><span>{t.label}</span>
-          {t.key === "dia" && pendCount > 0 && <span style={{ marginLeft: "auto", background: "#f59e0b", color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{pendCount}</span>}
+        <div key={t.key} style={S.navItem(active === t.key, col)} onClick={() => handleNav(t.key)} title={col ? t.label : ""}>
+          <t.icon size={15} />
+          {!col && <span>{t.label}</span>}
+          {!col && t.key === "dia" && pendCount > 0 && <span style={{ marginLeft: "auto", background: "#f59e0b", color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>{pendCount}</span>}
+          {col && t.key === "dia" && pendCount > 0 && <span style={{ position: "absolute", top: 6, right: 6, background: "#f59e0b", width: 7, height: 7, borderRadius: 99 }} />}
         </div>
       ))}
-      <div style={{ marginTop: "auto", padding: "14px 20px", borderTop: "1px solid #1e293b" }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{nome}</div>
-        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>{papel === "admin" ? "Promotor" : "Estagiária"}</div>
-        <div style={{ ...S.navItem(false), padding: "4px 0" }} onClick={onLogout}><LogOut size={13} /><span style={{ fontSize: 12 }}>Sair</span></div>
+      <div style={{ marginTop: "auto", padding: col ? "14px 0" : "14px 20px", borderTop: "1px solid #1e293b", display: "flex", flexDirection: "column", alignItems: col ? "center" : "flex-start", gap: 4 }}>
+        {!col && <><div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{nome}</div><div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>{papel === "admin" ? "Analista Jurídico" : "Estagiária"}</div></>}
+        <div style={{ ...S.navItem(false, col), padding: col ? "4px 0" : "4px 0", width: col ? "100%" : "auto", justifyContent: col ? "center" : "flex-start" }} onClick={onLogout} title="Sair">
+          <LogOut size={13} />{!col && <span style={{ fontSize: 12 }}>Sair</span>}
+        </div>
       </div>
     </div>
   );
@@ -447,7 +529,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
               </tr></thead>
               <tbody>{dayRegs.map((r) => (
                 <tr key={r.id} style={{ background: r.responsavel !== "Igor" ? "#f0f9ff" : "transparent" }}>
-                  <td style={{ ...S.td, fontFamily: "monospace", fontSize: 11 }}>{r.numero_procedimento}</td>
+                  <td style={{ ...S.td, fontFamily: "monospace", fontSize: 11, whiteSpace: "nowrap" }}>{r.numero_procedimento}</td>
                   <td style={S.td}><span style={S.badge("#1e40af", "#dbeafe")}>{r.tipo_procedimento}</span></td>
                   <td style={{ ...S.td, fontSize: 12 }}>{fmtDate(r.data_vista)}</td>
                   <td style={{ ...S.td, fontSize: 12, maxWidth: 120 }}>
@@ -488,12 +570,12 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <Field label="Tipo manifestação *" style={{ flex: 1 }}><DynSelect value={form.tipo_manifestacao} onChange={(v) => upd("tipo_manifestacao", v)} options={opts.tipo_manifestacao} onAdd={(v) => { setOpts((o) => ({ ...o, tipo_manifestacao: [...o.tipo_manifestacao, v] })); addOpt("tipo_manifestacao", v); }} /></Field>
-            <Field label="Responsável" style={{ flex: 1 }}><select style={{ ...S.select, width: "100%" }} value={form.responsavel} onChange={(e) => upd("responsavel", e.target.value)}>{nomes.map((n) => <option key={n} value={n}>{n}</option>)}</select></Field>
+            <Field label="Responsável" style={{ flex: 1 }}><select style={{ ...S.select, width: "100%" }} value={form.responsavel} onChange={(e) => upd("responsavel", e.target.value)}>{nomes.map((n) => <option key={n} value={n}>{n === "Igor" ? `${n} (Analista Jurídico)` : n}</option>)}</select></Field>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <Field label="Folhas" style={{ flex: 1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e) => upd("num_folhas", e.target.value)} /></Field>
           </div>
-          <Field label="Crimes apurados">{crimeOpts.length > 0 ? <CrimeMultiSelect value={form.crime} onChange={(v) => upd("crime", v)} options={crimeOpts} /> : <div style={{ fontSize: 12, color: "#94a3b8", padding: "6px 0" }}>Cadastre crimes no Dashboard para selecioná-los aqui.</div>}</Field>
+          <Field label="Crimes apurados">{crimeOpts.length > 0 ? <CrimeMultiSelect value={form.crime} onChange={(v) => upd("crime", v)} options={crimeOpts} allowAdd={false} /> : <div style={{ fontSize: 12, color: "#94a3b8", padding: "6px 0" }}>Cadastre crimes no Dashboard para selecioná-los aqui.</div>}</Field>
           {form.responsavel !== "Igor" && <Field label="Grau da correção"><DynSelect value={form.grau_correcao} onChange={(v) => upd("grau_correcao", v)} options={opts.grau_correcao} onAdd={(v) => { setOpts((o) => ({ ...o, grau_correcao: [...o.grau_correcao, v] })); addOpt("grau_correcao", v); }} placeholder="Selecione o grau..." /></Field>}
           {form.responsavel !== "Igor" && (
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
@@ -642,7 +724,11 @@ function InternReg({ entregas, setEntregas, opts, setOpts, userId, api, token, d
         <Field label="Número do procedimento *"><input style={S.input} value={form.numero_procedimento} onChange={(e) => upd("numero_procedimento", e.target.value)} placeholder="0000000-00.0000.0.00.0000" /></Field>
         <Field label="Tipo do procedimento *"><DynSelect value={form.tipo_procedimento} onChange={(v) => upd("tipo_procedimento", v)} options={opts.tipo_procedimento} onAdd={(v) => setOpts((o) => ({ ...o, tipo_procedimento: [...o.tipo_procedimento, v] }))} /></Field>
         <Field label="Tipo de manifestação *"><DynSelect value={form.tipo_manifestacao} onChange={(v) => upd("tipo_manifestacao", v)} options={opts.tipo_manifestacao} onAdd={(v) => setOpts((o) => ({ ...o, tipo_manifestacao: [...o.tipo_manifestacao, v] }))} /></Field>
-        <Field label="Crimes apurados"><CrimeMultiSelect value={form.crime} onChange={(v) => upd("crime", v)} options={crimeOpts} /></Field>
+        <Field label="Crimes apurados"><CrimeMultiSelect value={form.crime} onChange={(v) => upd("crime", v)} options={crimeOpts} allowAdd={true} onAdd={async (v) => {
+          const sorted = sortCrimes([...(crimeOpts), v]);
+          setOpts((o) => ({ ...o, crime: sorted }));
+          if (!demo) try { await api.post("opcoes", { campo: "crime", valor: v }, token); } catch (e) {}
+        }} /></Field>
         <div style={{ display: "flex", gap: 10 }}>
           <Field label="Data da vista" style={{ flex: 1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e) => upd("data_vista", e.target.value)} /></Field>
           <Field label="Nº de folhas" style={{ flex: 1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e) => upd("num_folhas", e.target.value)} /></Field>
@@ -816,6 +902,7 @@ const LS_PROFILE = "gp_profile";
 export default function App() {
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Restore session from localStorage
   const savedToken = localStorage.getItem(LS_TOKEN) || "";
@@ -1030,14 +1117,14 @@ export default function App() {
           <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
             <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} onClick={() => setSidebarOpen(false)} />
             <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 230, zIndex: 201 }}>
-              <Sidebar papel={currentPapel} active={activeTab} setActive={setActiveTab} nome={currentNome} pendCount={pendCount} onLogout={viewAs ? exitViewAs : logout} isMobile={true} onClose={() => setSidebarOpen(false)} />
+              <Sidebar papel={currentPapel} active={activeTab} setActive={setActiveTab} nome={currentNome} pendCount={pendCount} onLogout={viewAs ? exitViewAs : logout} isMobile={true} onClose={() => setSidebarOpen(false)} collapsed={false} setCollapsed={() => {}} />
             </div>
           </div>
         )}
 
         {/* Sidebar (desktop) */}
         {!isMobile && (
-          <Sidebar papel={currentPapel} active={activeTab} setActive={setActiveTab} nome={currentNome} pendCount={pendCount} onLogout={viewAs ? exitViewAs : logout} isMobile={false} />
+          <Sidebar papel={currentPapel} active={activeTab} setActive={setActiveTab} nome={currentNome} pendCount={pendCount} onLogout={viewAs ? exitViewAs : logout} isMobile={false} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
         )}
 
         {/* Main content */}
