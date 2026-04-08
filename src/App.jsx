@@ -229,8 +229,8 @@ function AuthScreen({ api, onAuth }) {
         if (r.error || r.message) { setErr(r.error_description || r.message || "Erro no login"); setLoading(false); return; }
         const userId = r.user?.id;
         if (!userId) { setErr("Resposta inesperada do servidor"); setLoading(false); return; }
-        const p = await api.get("profiles", r.access_token, `id=eq.${userId}`);
-        const prof = Array.isArray(p) ? p[0] : null;
+        const { data: pData1 } = await api.supabase.from("profiles").select("*").eq("id", userId).single();
+        const prof = pData1 || null;
         if (!prof) { setErr("Perfil não encontrado. Verifique se o cadastro foi concluído."); setLoading(false); return; }
         onAuth(r.access_token, r.user, prof);
       } else {
@@ -240,8 +240,8 @@ function AuthScreen({ api, onAuth }) {
         const uid = r.user?.id || r.id;
         if (!uid || !tok) { setErr("Erro ao criar conta. Tente fazer login."); setLoading(false); return; }
         await api.post("profiles", { id: uid, nome: f.nome, email: f.email, papel: "estagiaria", tipo_estagiaria: f.tipo, carga_horaria_diaria: parseFloat(f.carga) }, tok);
-        const p = await api.get("profiles", tok, `id=eq.${uid}`);
-        const prof = Array.isArray(p) ? p[0] : null;
+        const { data: pData2 } = await api.supabase.from("profiles").select("*").eq("id", uid).single();
+        const prof = pData2 || null;
         if (!prof) { setErr("Perfil criado mas não encontrado. Tente fazer login."); setLoading(false); return; }
         onAuth(tok, { id: uid }, prof);
       }
@@ -742,16 +742,18 @@ export default function App() {
 
   const loadData = async (apiRef, _tok, papel) => {
     setLoading(true);
+    const sb = apiRef.supabase;
     try {
-      const [regs, ents, profs, optsData, bl] = await Promise.all([
+      const [regsR, entsR, profsR, optsR, blR] = await Promise.all([
         papel === "admin"
-          ? apiRef.get("registros", tok, "order=data_trabalho.desc")
-          : apiRef.get("registros", tok, "entrega_id=not.is.null&select=id,entrega_id,obs_breves,obs_detalhadas,crime"),
-        apiRef.get("entregas", tok, "order=data_entrega.desc"),
-        papel === "admin" ? apiRef.get("profiles", tok, "papel=eq.estagiaria&order=nome.asc") : Promise.resolve([]),
-        apiRef.get("opcoes", tok, "order=campo.asc,valor.asc"),
-        papel === "admin" ? apiRef.get("backlog", tok, "order=data.desc") : Promise.resolve([]),
+          ? sb.from("registros").select("*").order("data_trabalho", { ascending: false })
+          : sb.from("registros").select("id,entrega_id,obs_breves,obs_detalhadas,crime").not("entrega_id", "is", null),
+        sb.from("entregas").select("*").order("data_entrega", { ascending: false }),
+        papel === "admin" ? sb.from("profiles").select("*").eq("papel", "estagiaria").order("nome") : Promise.resolve({ data: [] }),
+        sb.from("opcoes").select("*").order("campo").order("valor"),
+        papel === "admin" ? sb.from("backlog").select("*").order("data", { ascending: false }) : Promise.resolve({ data: [] }),
       ]);
+      const [regs, ents, profs, optsData, bl] = [regsR.data||[], entsR.data||[], profsR.data||[], optsR.data||[], blR.data||[]];
       setRegistros(Array.isArray(regs) ? regs : []);
       setEntregas(Array.isArray(ents) ? ents : []);
       setEstagiarias(Array.isArray(profs) ? profs : []);
@@ -777,8 +779,8 @@ export default function App() {
     // Check for an existing session on mount
     ENV_API.supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        const profs = await ENV_API.get("profiles", null, `id=eq.${session.user.id}`);
-        const prof = Array.isArray(profs) ? profs[0] : null;
+        const { data: profData } = await ENV_API.supabase.from("profiles").select("*").eq("id", session.user.id).single();
+        const prof = profData || null;
         if (prof) {
           setApi(ENV_API);
           setToken(session.access_token);
