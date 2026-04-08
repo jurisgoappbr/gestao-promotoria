@@ -215,7 +215,10 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
 
   const saveReg = async () => {
     if (!form.numero_procedimento || !form.tipo_procedimento || !form.tipo_manifestacao) return;
-    if (form.crime && !crimes.includes(form.crime)) setCrimes([...crimes, form.crime]);
+    if (form.crime && !crimes.includes(form.crime)) {
+      setCrimes([...crimes, form.crime]);
+      if (!demo) try { await api.post("opcoes", { campo: "crime", valor: form.crime }, token); } catch (e) {}
+    }
     const clean = {
       numero_procedimento: form.numero_procedimento,
       tipo_procedimento: form.tipo_procedimento,
@@ -416,7 +419,10 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const submit = async () => {
     if (!form.numero_procedimento || !form.tipo_procedimento || !form.tipo_manifestacao) return;
-    if (form.crime && !crimes.includes(form.crime)) setCrimes([...crimes, form.crime]);
+    if (form.crime && !crimes.includes(form.crime)) {
+      setCrimes([...crimes, form.crime]);
+      if (!demo) try { await api.post("opcoes", { campo: "crime", valor: form.crime }, token); } catch (e) {}
+    }
     const now = new Date();
     const payload = { numero_procedimento: form.numero_procedimento, tipo_procedimento: form.tipo_procedimento, tipo_manifestacao: form.tipo_manifestacao, crime: form.crime || null, data_vista: form.data_vista || null, num_folhas: form.num_folhas ? parseInt(form.num_folhas) : null, urgente: form.urgente, estagiaria_id: userId, data_entrega: today, hora_entrega: now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), status: "pendente" };
     if (!demo) {
@@ -627,6 +633,7 @@ export default function App() {
       const crimeSet = new Set();
       (Array.isArray(regs) ? regs : []).forEach((r) => { if (r.crime) crimeSet.add(r.crime); });
       (Array.isArray(ents) ? ents : []).forEach((e) => { if (e.crime) crimeSet.add(e.crime); });
+      (Array.isArray(optsData) ? optsData : []).forEach((o) => { if (o.campo === "crime") crimeSet.add(o.valor); });
       setCrimes([...crimeSet]);
     } catch (e) { console.error("Erro ao carregar dados:", e); }
     setLoading(false);
