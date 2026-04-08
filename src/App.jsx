@@ -241,7 +241,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
   const [form, setForm] = useState(empty);
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const dayRegs = registros.filter((r) => r.data_trabalho === selectedDate);
-  const pendentes = entregas.filter((e) => e.status === "pendente" || e.status === "refazer").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
+  const pendentes = entregas.filter((e) => e.status === "pendente" || e.status === "refazer" || e.status === "refeito").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
   const dayBL = backlog.find((b) => b.data === selectedDate) || { pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0 };
 
   const updateBL = async (fld, val) => {
@@ -348,7 +348,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
     {pendentes.length > 0 && <div style={{ ...S.card, borderLeft: "4px solid #f59e0b" }}>
       <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}><Bell size={14} color="#f59e0b" /> Pendentes de Correção ({pendentes.length})</h3>
       {pendentes.map((e) => (<div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #f8fafc" }}>
-        <div style={{ fontSize: 12.5 }}><span style={{ fontWeight: 600 }}>{getEstName(e.estagiaria_id, estagiarias)}</span><span style={{ color: "#64748b" }}> — {e.tipo_manifestacao} — </span><span style={{ fontFamily: "monospace", fontSize: 11.5 }}>{e.numero_procedimento}</span><span style={{ color: "#94a3b8", marginLeft: 6, fontSize: 11 }}>{fmtDate(e.data_entrega)} {e.hora_entrega}</span>{e.urgente && <span style={{ ...S.badge("#991b1b", "#fee2e2"), marginLeft: 6 }}>URGENTE</span>}{e.status === "refazer" && <span style={{ ...S.badge("#fff", "#7c3aed"), marginLeft: 6 }}>↩ REFAZER</span>}</div>
+        <div style={{ fontSize: 12.5 }}><span style={{ fontWeight: 600 }}>{getEstName(e.estagiaria_id, estagiarias)}</span><span style={{ color: "#64748b" }}> — {e.tipo_manifestacao} — </span><span style={{ fontFamily: "monospace", fontSize: 11.5 }}>{e.numero_procedimento}</span><span style={{ color: "#94a3b8", marginLeft: 6, fontSize: 11 }}>{fmtDate(e.data_entrega)} {e.hora_entrega}</span>{e.urgente && <span style={{ ...S.badge("#991b1b", "#fee2e2"), marginLeft: 6 }}>URGENTE</span>}{e.status === "refazer" && <span style={{ ...S.badge("#fff", "#7c3aed"), marginLeft: 6 }}>↩ REFAZER</span>}{e.status === "refeito" && <><span style={{ ...S.badge("#fff", "#7c3aed"), marginLeft: 6 }}>↩ REFAZER</span><span style={{ ...S.badge("#fff", "#059669"), marginLeft: 4 }}>✓ REFEITO</span></>}</div>
         <button style={S.btn("warn")} onClick={() => startCorr(e)}><Edit3 size={12} /> Corrigir</button>
       </div>))}
     </div>}
@@ -521,7 +521,7 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
 }
 
 /* ─── INTERN: HISTÓRICO ─── */
-function InternHist({ entregas, registros, userId }) {
+function InternHist({ entregas, setEntregas, registros, userId, api, token, demo }) {
   const [obsPopup, setObsPopup] = useState(null);
   const mine = entregas.filter((e) => e.estagiaria_id === userId).sort((a, b) => (b.data_entrega + b.hora_entrega).localeCompare(a.data_entrega + a.hora_entrega));
   const regByEntrega = useMemo(() => {
@@ -546,7 +546,14 @@ function InternHist({ entregas, registros, userId }) {
           <td style={S.td}>
             {e.status==="pendente" && <span style={S.badge("#92400e","#fef3c7")}>Pendente</span>}
             {e.status==="corrigido" && <span style={S.badge("#065f46","#d1fae5")}>Corrigido ✓</span>}
-            {e.status==="refazer" && <span style={{ ...S.badge("#fff","#7c3aed"), animation: "pulse 2s infinite" }}>↩ Refazer</span>}
+            {e.status==="refeito" && <span style={S.badge("#065f46","#d1fae5")}>Refeito ✓</span>}
+            {e.status==="refazer" && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ ...S.badge("#fff","#7c3aed") }}>↩ Refazer</span>
+              <button style={{ ...S.btn("success"), fontSize: 11, padding: "3px 8px" }} onClick={async () => {
+                if (!demo) try { await api.patch("entregas", e.id, { status: "refeito" }, token); } catch(err) { alert("Erro ao atualizar. Tente novamente."); return; }
+                setEntregas(entregas.map((x) => x.id === e.id ? { ...x, status: "refeito" } : x));
+              }}>✓ Refeito</button>
+            </div>}
           </td>
           <td style={{ ...S.td, maxWidth: 210 }}>
             {obsdet ? (
@@ -780,7 +787,7 @@ export default function App() {
         {currentPapel==="admin"&&activeTab==="dash"&&<Dash registros={registros} entregas={entregas} estagiarias={estagiarias} backlog={backlog}/>}
         {currentPapel==="admin"&&activeTab==="est"&&<EstagiariaTab estagiarias={estagiarias} setEstagiarias={setEstagiarias} registros={registros} entregas={entregas} onViewAs={handleViewAs} api={api} token={token} demo={demo}/>}
         {currentPapel==="estagiaria"&&activeTab==="registrar"&&<InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
-        {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} registros={registros} userId={viewAs || profile.id}/>}
+        {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} setEntregas={setEntregas} registros={registros} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
       </div>
     </div>
   </div>);
