@@ -447,17 +447,44 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
 
 /* ─── INTERN: HISTÓRICO ─── */
 function InternHist({ entregas, registros, userId }) {
+  const [obsPopup, setObsPopup] = useState(null);
   const mine = entregas.filter((e) => e.estagiaria_id === userId).sort((a, b) => (b.data_entrega + b.hora_entrega).localeCompare(a.data_entrega + a.hora_entrega));
-  const obsMap = {};
-  (registros || []).forEach((r) => { if (r.entrega_id && r.obs_breves) obsMap[r.entrega_id] = r.obs_breves; });
+  const regByEntrega = useMemo(() => {
+    const m = {};
+    (registros || []).forEach((r) => { if (r.entrega_id) m[r.entrega_id] = r; });
+    return m;
+  }, [registros]);
   return (<div>
     <h1 style={S.h1}>Meu Histórico</h1>
     <p style={{ color: "#64748b", fontSize: 13, marginBottom: 14 }}>{mine.length} entregas</p>
-    <div style={S.card}><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
-      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observações</th></tr></thead>
-      <tbody>{mine.map((e) => { const obs = obsMap[e.id] || null; return (<tr key={e.id}><td style={S.td}>{fmtDate(e.data_entrega)}</td><td style={{...S.td,fontFamily:"monospace",fontSize:12}}>{e.hora_entrega}</td><td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td><td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td><td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td><td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td><td style={{...S.td, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:12, color: obs ? "#1e293b" : "#94a3b8"}} title={obs || ""}>{obs || "—"}</td></tr>); })}
+    <div style={{ ...S.card, overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 750 }}>
+      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observações do promotor</th></tr></thead>
+      <tbody>{mine.map((e) => {
+        const reg = regByEntrega[e.id];
+        const obsdet = reg?.obs_detalhadas || null;
+        return (<tr key={e.id}>
+          <td style={S.td}>{fmtDate(e.data_entrega)}</td>
+          <td style={{...S.td,fontFamily:"monospace",fontSize:12}}>{e.hora_entrega}</td>
+          <td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td>
+          <td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td>
+          <td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td>
+          <td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td>
+          <td style={{ ...S.td, maxWidth: 210 }}>
+            {obsdet ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} onClick={() => setObsPopup(obsdet)}>
+                <span style={{ fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170, display: "inline-block" }}>{obsdet}</span>
+                <span style={{ color: "#2563eb", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>▾</span>
+              </div>
+            ) : "—"}
+          </td>
+        </tr>);
+      })}
       {mine.length===0&&<tr><td colSpan={7} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
-    </table></div></div></div>);
+    </table></div>
+    {obsPopup && <Modal title="Observação do promotor" onClose={() => setObsPopup(null)}>
+      <div style={{ fontSize: 13, color: "#1e293b", background: "#f8fafc", borderRadius: 6, padding: "12px 14px", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{obsPopup}</div>
+    </Modal>}
+  </div>);
 }
 
 /* ─── ADMIN: ESTAGIÁRIAS ─── */
