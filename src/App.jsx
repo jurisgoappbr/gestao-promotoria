@@ -62,6 +62,7 @@ function createApi(url, key) {
   const h = (t) => ({ apikey: key, Authorization: `Bearer ${t || key}`, "Content-Type": "application/json", Prefer: "return=representation" });
   return {
     login: async (em, pw) => (await fetch(`${url}/auth/v1/token?grant_type=password`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ email: em, password: pw }) })).json(),
+    refresh: async (refreshToken) => (await fetch(`${url}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refreshToken }) })).json(),
     signup: async (em, pw) => (await fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ email: em, password: pw }) })).json(),
     get: async (tbl, t, q = "") => (await fetch(`${url}/rest/v1/${tbl}?${q}`, { headers: h(t) })).json(),
     post: async (tbl, d, t) => (await fetch(`${url}/rest/v1/${tbl}`, { method: "POST", headers: h(t), body: JSON.stringify(d) })).json(),
@@ -180,7 +181,7 @@ function AuthScreen({ api, onAuth }) {
         const p = await api.get("profiles", r.access_token, `id=eq.${userId}`);
         const prof = Array.isArray(p) ? p[0] : null;
         if (!prof) { setErr("Perfil não encontrado. Verifique se o cadastro foi concluído."); setLoading(false); return; }
-        onAuth(r.access_token, r.user, prof);
+        onAuth(r.access_token, { ...r.user, refresh_token: r.refresh_token }, prof);
       } else {
         const r = await api.signup(f.email, f.pw);
         if (r.error || r.message) { setErr(r.error_description || r.message || "Erro no registro"); setLoading(false); return; }
@@ -465,7 +466,7 @@ function Dash({ registros, entregas, estagiarias, backlog }) {
 }
 
 /* ─── INTERN: REGISTRAR ENTREGA ─── */
-function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, userId, api, token, demo }) {
+function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, userId, api, token, demo, callWithRefresh }) {
   const [form, setForm] = useState({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false });
   const [ok, setOk] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -482,7 +483,8 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
     const payload = { numero_procedimento: form.numero_procedimento, tipo_procedimento: form.tipo_procedimento, tipo_manifestacao: form.tipo_manifestacao, crime: form.crime || null, data_vista: form.data_vista || null, num_folhas: form.num_folhas ? parseInt(form.num_folhas) : null, urgente: form.urgente, estagiaria_id: userId, data_entrega: today, hora_entrega: now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), status: "pendente" };
     if (!demo) {
       try {
-        const result = await api.post("entregas", payload, token);
+        const doPost = (tok) => api.post("entregas", payload, tok);
+        const result = callWithRefresh ? await callWithRefresh(doPost) : await doPost(token);
         const saved = Array.isArray(result) ? result[0] : result;
         if (!saved || saved.error || saved.message) throw new Error(saved?.message || "Erro ao salvar");
         setEntregas([...entregas, saved]);
@@ -689,6 +691,39 @@ export default function App() {
   const [opts, setOpts] = useState(INIT_OPTS);
   const [crimes, setCrimes] = useState([]);
 
+  // Helper: try call, if JWT expired refresh token and retry once
+  const callWithRefresh = async (fn) => {
+    try {
+      const result = await fn(token);
+      if (result && (result.message === "JWT expired" || result.error === "invalid_jwt")) {
+        throw new Error("JWT expired");
+      }
+      return result;
+    } catch (e) {
+      if (e.message === "JWT expired" || String(e).includes("JWT")) {
+        try {
+          const saved = localStorage.getItem(SESSION_KEY);
+          const { refreshTok, url, key } = saved ? JSON.parse(saved) : {};
+          if (!refreshTok) throw new Error("no refresh token");
+          const refreshApi = (url && key) ? createApi(url, key) : ENV_API;
+          const r = await refreshApi.refresh(refreshTok);
+          if (!r.access_token) throw new Error("refresh failed");
+          const newTok = r.access_token;
+          setToken(newTok);
+          try { const s = JSON.parse(localStorage.getItem(SESSION_KEY)); s.tok = newTok; s.refreshTok = r.refresh_token || refreshTok; localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (_) {}
+          return await fn(newTok);
+        } catch (_) {
+          // Refresh failed — force logout
+          try { localStorage.removeItem(SESSION_KEY); } catch (_) {}
+          setScreen("auth"); setProfile(null); setToken("");
+          alert("Sua sessão expirou. Por favor, faça login novamente.");
+          throw e;
+        }
+      }
+      throw e;
+    }
+  };
+
   const loadData = async (apiRef, tok, papel) => {
     setLoading(true);
     try {
@@ -759,7 +794,7 @@ export default function App() {
     setToken(tok); setProfile(prof);
     setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
     setScreen("app");
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ url: ENV_URL || "", key: ENV_KEY || "", tok, prof })); } catch (e) {}
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ url: ENV_URL || "", key: ENV_KEY || "", tok, refreshTok: usr?.refresh_token || "", prof })); } catch (e) {}
     await loadData(api, tok, prof.papel);
   };
   const logout = () => {
@@ -786,7 +821,7 @@ export default function App() {
         {currentPapel==="admin"&&activeTab==="dia"&&<DiaTrabalho registros={registros} setRegistros={setRegistros} entregas={entregas} setEntregas={setEntregas} backlog={backlog} setBacklog={setBacklog} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} estagiarias={estagiarias} selectedDate={selectedDate} setSelectedDate={setSelectedDate} api={api} token={token} demo={demo}/>}
         {currentPapel==="admin"&&activeTab==="dash"&&<Dash registros={registros} entregas={entregas} estagiarias={estagiarias} backlog={backlog}/>}
         {currentPapel==="admin"&&activeTab==="est"&&<EstagiariaTab estagiarias={estagiarias} setEstagiarias={setEstagiarias} registros={registros} entregas={entregas} onViewAs={handleViewAs} api={api} token={token} demo={demo}/>}
-        {currentPapel==="estagiaria"&&activeTab==="registrar"&&<InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
+        {currentPapel==="estagiaria"&&activeTab==="registrar"&&<InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs || profile.id} api={api} token={token} demo={demo} callWithRefresh={callWithRefresh}/>}
         {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} setEntregas={setEntregas} registros={registros} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
       </div>
     </div>
