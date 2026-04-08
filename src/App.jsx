@@ -446,16 +446,18 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
 }
 
 /* ─── INTERN: HISTÓRICO ─── */
-function InternHist({ entregas, userId }) {
+function InternHist({ entregas, registros, userId }) {
   const mine = entregas.filter((e) => e.estagiaria_id === userId).sort((a, b) => (b.data_entrega + b.hora_entrega).localeCompare(a.data_entrega + a.hora_entrega));
+  const obsMap = {};
+  (registros || []).forEach((r) => { if (r.entrega_id && r.obs_breves) obsMap[r.entrega_id] = r.obs_breves; });
   return (<div>
     <h1 style={S.h1}>Meu Histórico</h1>
     <p style={{ color: "#64748b", fontSize: 13, marginBottom: 14 }}>{mine.length} entregas</p>
-    <div style={S.card}><table style={{ width: "100%", borderCollapse: "collapse" }}>
-      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th></tr></thead>
-      <tbody>{mine.map((e) => (<tr key={e.id}><td style={S.td}>{fmtDate(e.data_entrega)}</td><td style={{...S.td,fontFamily:"monospace",fontSize:12}}>{e.hora_entrega}</td><td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td><td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td><td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td><td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td></tr>))}
-      {mine.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
-    </table></div></div>);
+    <div style={S.card}><div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observações</th></tr></thead>
+      <tbody>{mine.map((e) => { const obs = obsMap[e.id] || null; return (<tr key={e.id}><td style={S.td}>{fmtDate(e.data_entrega)}</td><td style={{...S.td,fontFamily:"monospace",fontSize:12}}>{e.hora_entrega}</td><td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td><td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td><td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td><td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td><td style={{...S.td, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:12, color: obs ? "#1e293b" : "#94a3b8"}} title={obs || ""}>{obs || "—"}</td></tr>); })}
+      {mine.length===0&&<tr><td colSpan={7} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
+    </table></div></div></div>);
 }
 
 /* ─── ADMIN: ESTAGIÁRIAS ─── */
@@ -578,7 +580,9 @@ export default function App() {
     setLoading(true);
     try {
       const [regs, ents, profs, optsData, bl] = await Promise.all([
-        papel === "admin" ? apiRef.get("registros", tok, "order=data_trabalho.desc") : Promise.resolve([]),
+        papel === "admin"
+          ? apiRef.get("registros", tok, "order=data_trabalho.desc")
+          : apiRef.get("registros", tok, "entrega_id=not.is.null&select=id,entrega_id,obs_breves,obs_detalhadas"),
         apiRef.get("entregas", tok, "order=data_entrega.desc"),
         papel === "admin" ? apiRef.get("profiles", tok, "papel=eq.estagiaria&order=nome.asc") : Promise.resolve([]),
         apiRef.get("opcoes", tok, "order=campo.asc,valor.asc"),
@@ -661,7 +665,7 @@ export default function App() {
         {currentPapel==="admin"&&activeTab==="dash"&&<Dash registros={registros} entregas={entregas} estagiarias={estagiarias} backlog={backlog}/>}
         {currentPapel==="admin"&&activeTab==="est"&&<EstagiariaTab estagiarias={estagiarias} setEstagiarias={setEstagiarias} registros={registros} entregas={entregas} onViewAs={handleViewAs} api={api} token={token} demo={demo}/>}
         {currentPapel==="estagiaria"&&activeTab==="registrar"&&<InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
-        {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} userId={viewAs || profile.id}/>}
+        {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} registros={registros} userId={viewAs || profile.id}/>}
       </div>
     </div>
   </div>);
