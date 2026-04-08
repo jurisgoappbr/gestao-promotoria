@@ -299,7 +299,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
             await api.patch("entregas", corrigindo.id, { status: "corrigido" }, token);
             setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: "corrigido" } : e));
           }
-        } catch (e) { setRegistros([...registros, { ...payload, id: Date.now() }]); }
+        } catch (e) { alert("Falha ao salvar no banco. Verifique sua conexão e tente novamente."); return; }
       } else {
         setRegistros([...registros, { ...payload, id: Date.now() }]);
         if (corrigindo) setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: "corrigido" } : e));
@@ -466,9 +466,12 @@ function Dash({ registros, entregas, estagiarias, backlog }) {
 function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, userId, api, token, demo }) {
   const [form, setForm] = useState({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false });
   const [ok, setOk] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const submit = async () => {
     if (!form.numero_procedimento || !form.tipo_procedimento || !form.tipo_manifestacao) return;
+    setSaving(true); setSaveErr("");
     if (form.crime && !crimes.includes(form.crime)) {
       setCrimes([...crimes, form.crime]);
       if (!demo) try { await api.post("opcoes", { campo: "crime", valor: form.crime }, token); } catch (e) {}
@@ -476,14 +479,28 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
     const now = new Date();
     const payload = { numero_procedimento: form.numero_procedimento, tipo_procedimento: form.tipo_procedimento, tipo_manifestacao: form.tipo_manifestacao, crime: form.crime || null, data_vista: form.data_vista || null, num_folhas: form.num_folhas ? parseInt(form.num_folhas) : null, urgente: form.urgente, estagiaria_id: userId, data_entrega: today, hora_entrega: now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), status: "pendente" };
     if (!demo) {
-      try { const [result] = await api.post("entregas", payload, token); setEntregas([...entregas, result]); } catch (e) { setEntregas([...entregas, { ...payload, id: Date.now() }]); }
-    } else { setEntregas([...entregas, { ...payload, id: Date.now() }]); }
-    setForm({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false }); setOk(true); setTimeout(() => setOk(false), 3000);
+      try {
+        const result = await api.post("entregas", payload, token);
+        const saved = Array.isArray(result) ? result[0] : result;
+        if (!saved || saved.error || saved.message) throw new Error(saved?.message || "Erro ao salvar");
+        setEntregas([...entregas, saved]);
+        setForm({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false });
+        setOk(true); setTimeout(() => setOk(false), 4000);
+      } catch (e) {
+        setSaveErr("Falha ao salvar no banco de dados. Verifique sua conexão e tente novamente.");
+      }
+    } else {
+      setEntregas([...entregas, { ...payload, id: Date.now() }]);
+      setForm({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false });
+      setOk(true); setTimeout(() => setOk(false), 4000);
+    }
+    setSaving(false);
   };
   return (<div>
     <h1 style={S.h1}>Registrar Entrega</h1>
     <p style={{ color: "#64748b", fontSize: 13, marginBottom: 16 }}>Informe a peça que você elaborou</p>
-    {ok && <div style={{ ...S.card, borderLeft: "4px solid #10b981", background: "#f0fdf4", display: "flex", alignItems: "center", gap: 8 }}><Check size={16} color="#10b981"/><span style={{ fontWeight: 600, color: "#065f46", fontSize: 13 }}>Entrega registrada!</span></div>}
+    {ok && <div style={{ ...S.card, borderLeft: "4px solid #10b981", background: "#f0fdf4", display: "flex", alignItems: "center", gap: 8 }}><Check size={16} color="#10b981"/><span style={{ fontWeight: 600, color: "#065f46", fontSize: 13 }}>Entrega registrada com sucesso!</span></div>}
+    {saveErr && <div style={{ ...S.card, borderLeft: "4px solid #ef4444", background: "#fef2f2", display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontWeight: 600, color: "#991b1b", fontSize: 13 }}>⚠️ {saveErr}</span></div>}
     <div style={{ ...S.card, maxWidth: 480 }}>
       <Field label="Número do procedimento *"><input style={S.input} value={form.numero_procedimento} onChange={(e) => upd("numero_procedimento", e.target.value)} placeholder="0000000-00.0000.0.00.0000" /></Field>
       <Field label="Tipo do procedimento *"><DynSelect value={form.tipo_procedimento} onChange={(v) => upd("tipo_procedimento", v)} options={opts.tipo_procedimento} onAdd={(v) => setOpts({ ...opts, tipo_procedimento: [...opts.tipo_procedimento, v] })} /></Field>
@@ -497,7 +514,7 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
         <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer", color: "#ef4444", fontWeight: form.urgente ? 700 : 400 }}><input type="checkbox" checked={form.urgente} onChange={(e) => upd("urgente", e.target.checked)} /> Urgente</label>
         <span style={{ fontSize: 12, color: "#94a3b8" }}>Registrado em: <strong>{new Date().toLocaleString("pt-BR")}</strong></span>
       </div>
-      <button style={{ ...S.btn("primary"), width: "100%", justifyContent: "center", padding: "9px" }} onClick={submit} disabled={!form.numero_procedimento||!form.tipo_procedimento||!form.tipo_manifestacao}><Send size={13}/> Registrar Entrega</button>
+      <button style={{ ...S.btn("primary"), width: "100%", justifyContent: "center", padding: "9px", opacity: saving ? 0.7 : 1 }} onClick={submit} disabled={saving||!form.numero_procedimento||!form.tipo_procedimento||!form.tipo_manifestacao}><Send size={13}/> {saving ? "Salvando..." : "Registrar Entrega"}</button>
     </div></div>);
 }
 
