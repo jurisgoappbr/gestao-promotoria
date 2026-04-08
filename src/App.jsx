@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { LogOut, Plus, Check, Users, FileText, Send, History, X, Search, Bell, Save, Trash2, ChevronLeft, ChevronRight, LayoutDashboard, ClipboardList, Edit3, AlertTriangle, Eye } from "lucide-react";
 
@@ -96,15 +96,58 @@ function DynSelect({ value, onChange, options, onAdd, placeholder, style: st }) 
   </select>);
 }
 function CrimeInput({ value, onChange, suggestions, onAdd }) {
-  const lid = useMemo(() => "cr" + Math.random().toString(36).slice(2, 7), []);
-  const isNew = value.trim() && !suggestions.includes(value.trim());
-  return (<div>
-    <input list={lid} style={S.input} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Ex: 121 (homicídio doloso), 129 § 13" />
-    <datalist id={lid}>{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
-    {isNew && onAdd && <div style={{ marginTop: 4 }}>
-      <span style={{ fontSize: 11.5, color: "#2563eb", cursor: "pointer", fontWeight: 600 }} onClick={() => onAdd(value.trim())}>+ Adicionar "{value.trim()}" ao sistema</span>
-    </div>}
-  </div>);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(value);
+  const ref = useRef(null);
+
+  // sync external value changes
+  useEffect(() => { setQuery(value); }, [value]);
+
+  // close on outside click
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = query.trim()
+    ? suggestions.filter((s) => s.toLowerCase().includes(query.toLowerCase()))
+    : suggestions;
+  const isNew = query.trim() && !suggestions.map(s=>s.toLowerCase()).includes(query.trim().toLowerCase());
+
+  const select = (s) => { onChange(s); setQuery(s); setOpen(false); };
+  const handleAdd = () => { if (query.trim() && onAdd) { onAdd(query.trim()); onChange(query.trim()); setOpen(false); } };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "center", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", overflow: "hidden", boxShadow: open ? "0 0 0 2px #bfdbfe" : "none" }}>
+        <input
+          style={{ ...S.input, border: "none", boxShadow: "none", flex: 1 }}
+          value={query}
+          placeholder="Buscar ou adicionar crime..."
+          onChange={(e) => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+        />
+        {query && <span style={{ paddingRight: 8, color: "#94a3b8", cursor: "pointer", fontSize: 14 }} onClick={() => { setQuery(""); onChange(""); setOpen(false); }}>×</span>}
+      </div>
+      {open && (filtered.length > 0 || isNew) && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", marginTop: 4, maxHeight: 220, overflowY: "auto" }}>
+          {filtered.map((s) => (
+            <div key={s} onMouseDown={() => select(s)} style={{ padding: "8px 12px", fontSize: 13, cursor: "pointer", borderBottom: "1px solid #f8fafc", background: s === value ? "#eff6ff" : "#fff", color: s === value ? "#1d4ed8" : "#1e293b", fontWeight: s === value ? 600 : 400 }}
+              onMouseEnter={(e) => { if (s !== value) e.currentTarget.style.background = "#f8fafc"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = s === value ? "#eff6ff" : "#fff"; }}>
+              {s}
+            </div>
+          ))}
+          {isNew && (
+            <div onMouseDown={handleAdd} style={{ padding: "8px 12px", fontSize: 13, cursor: "pointer", color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, borderTop: filtered.length > 0 ? "1px solid #e2e8f0" : "none", background: "#f0f9ff" }}>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Adicionar "{query.trim()}" ao sistema
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ConfigScreen({ onConnect, onDemo }) {
