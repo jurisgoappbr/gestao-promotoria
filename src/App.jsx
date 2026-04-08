@@ -549,7 +549,7 @@ function InternHist({ entregas, setEntregas, registros, userId, api, token, demo
             {e.status==="refeito" && <span style={S.badge("#065f46","#d1fae5")}>Refeito ✓</span>}
             {e.status==="refazer" && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <span style={{ ...S.badge("#fff","#7c3aed") }}>↩ Refazer</span>
-              <button style={{ ...S.btn("success"), fontSize: 11, padding: "3px 8px" }} onClick={async () => {
+              <button style={{ fontSize: 11, padding: "3px 8px", borderRadius: 99, border: "1.5px solid #059669", background: "transparent", color: "#059669", fontWeight: 600, cursor: "pointer", fontFamily: font }} onClick={async () => {
                 if (!demo) try { await api.patch("entregas", e.id, { status: "refeito" }, token); } catch(err) { alert("Erro ao atualizar. Tente novamente."); return; }
                 setEntregas(entregas.map((x) => x.id === e.id ? { ...x, status: "refeito" } : x));
               }}>✓ Refeito</button>
