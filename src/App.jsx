@@ -241,7 +241,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
   const [form, setForm] = useState(empty);
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const dayRegs = registros.filter((r) => r.data_trabalho === selectedDate);
-  const pendentes = entregas.filter((e) => e.status === "pendente").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
+  const pendentes = entregas.filter((e) => e.status === "pendente" || e.status === "refazer").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
   const dayBL = backlog.find((b) => b.data === selectedDate) || { pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0 };
 
   const updateBL = async (fld, val) => {
@@ -263,7 +263,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
     if (!demo) try { await api.post("opcoes", { campo, valor }, token); } catch (e) {}
   };
 
-  const saveReg = async () => {
+  const saveReg = async (refazer = false) => {
     if (!form.numero_procedimento || !form.tipo_procedimento || !form.tipo_manifestacao) return;
     if (form.crime && !crimes.includes(form.crime)) {
       setCrimes([...crimes, form.crime]);
@@ -296,13 +296,14 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
           const [result] = await api.post("registros", payload, token);
           setRegistros([...registros, result]);
           if (corrigindo) {
-            await api.patch("entregas", corrigindo.id, { status: "corrigido" }, token);
-            setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: "corrigido" } : e));
+            const novoStatus = refazer ? "refazer" : "corrigido";
+            await api.patch("entregas", corrigindo.id, { status: novoStatus }, token);
+            setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: novoStatus } : e));
           }
         } catch (e) { alert("Falha ao salvar no banco. Verifique sua conexão e tente novamente."); return; }
       } else {
         setRegistros([...registros, { ...payload, id: Date.now() }]);
-        if (corrigindo) setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: "corrigido" } : e));
+        if (corrigindo) { const novoStatus = refazer ? "refazer" : "corrigido"; setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: novoStatus } : e)); }
       }
     }
     setForm(empty); setShowForm(false); setCorrigindo(null);
@@ -347,7 +348,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
     {pendentes.length > 0 && <div style={{ ...S.card, borderLeft: "4px solid #f59e0b" }}>
       <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}><Bell size={14} color="#f59e0b" /> Pendentes de Correção ({pendentes.length})</h3>
       {pendentes.map((e) => (<div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #f8fafc" }}>
-        <div style={{ fontSize: 12.5 }}><span style={{ fontWeight: 600 }}>{getEstName(e.estagiaria_id, estagiarias)}</span><span style={{ color: "#64748b" }}> — {e.tipo_manifestacao} — </span><span style={{ fontFamily: "monospace", fontSize: 11.5 }}>{e.numero_procedimento}</span><span style={{ color: "#94a3b8", marginLeft: 6, fontSize: 11 }}>{fmtDate(e.data_entrega)} {e.hora_entrega}</span>{e.urgente && <span style={{ ...S.badge("#991b1b", "#fee2e2"), marginLeft: 6 }}>URGENTE</span>}</div>
+        <div style={{ fontSize: 12.5 }}><span style={{ fontWeight: 600 }}>{getEstName(e.estagiaria_id, estagiarias)}</span><span style={{ color: "#64748b" }}> — {e.tipo_manifestacao} — </span><span style={{ fontFamily: "monospace", fontSize: 11.5 }}>{e.numero_procedimento}</span><span style={{ color: "#94a3b8", marginLeft: 6, fontSize: 11 }}>{fmtDate(e.data_entrega)} {e.hora_entrega}</span>{e.urgente && <span style={{ ...S.badge("#991b1b", "#fee2e2"), marginLeft: 6 }}>URGENTE</span>}{e.status === "refazer" && <span style={{ ...S.badge("#fff", "#7c3aed"), marginLeft: 6 }}>↩ REFAZER</span>}</div>
         <button style={S.btn("warn")} onClick={() => startCorr(e)}><Edit3 size={12} /> Corrigir</button>
       </div>))}
     </div>}
@@ -413,9 +414,10 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer" }}><input type="checkbox" checked={form.acompanhar} onChange={(e) => upd("acompanhar", e.target.checked)} /> Acompanhar</label>
         <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer" }}><input type="checkbox" checked={form.complicado} onChange={(e) => upd("complicado", e.target.checked)} /> Complicado</label>
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
         <button style={S.btn("ghost")} onClick={() => { setShowForm(false); setCorrigindo(null); setEditId(null); setForm(empty); }}>Cancelar</button>
-        <button style={S.btn("primary")} onClick={saveReg}><Save size={13} /> {editId ? "Salvar" : corrigindo ? "Registrar Correção" : "Registrar"}</button>
+        {corrigindo && <button style={{ ...S.btn("danger"), gap: 6 }} onClick={() => { if (!form.obs_detalhadas?.trim()) { alert("Preencha as Observações detalhadas explicando o que deve ser refeito."); return; } saveReg(true); }} title="Devolve a tarefa para a estagiária refazer">↩ Pedir para Refazer</button>}
+        <button style={S.btn("primary")} onClick={() => saveReg(false)}><Save size={13} /> {editId ? "Salvar" : corrigindo ? "Registrar Correção" : "Registrar"}</button>
       </div>
     </Modal>}
   </div>);
@@ -541,7 +543,11 @@ function InternHist({ entregas, registros, userId }) {
           <td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td>
           <td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td>
           <td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td>
-          <td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td>
+          <td style={S.td}>
+            {e.status==="pendente" && <span style={S.badge("#92400e","#fef3c7")}>Pendente</span>}
+            {e.status==="corrigido" && <span style={S.badge("#065f46","#d1fae5")}>Corrigido ✓</span>}
+            {e.status==="refazer" && <span style={{ ...S.badge("#fff","#7c3aed"), animation: "pulse 2s infinite" }}>↩ Refazer</span>}
+          </td>
           <td style={{ ...S.td, maxWidth: 210 }}>
             {obsdet ? (
               <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} onClick={() => setObsPopup(obsdet)}>
