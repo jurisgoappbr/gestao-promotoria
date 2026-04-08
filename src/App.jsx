@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { LogOut, Plus, Check, Users, FileText, Send, History, X, Search, Bell, Save, Trash2, ChevronLeft, ChevronRight, LayoutDashboard, ClipboardList, Edit3, AlertTriangle, Eye } from "lucide-react";
 
@@ -58,17 +59,67 @@ const fmtDate = (d) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR")
 const shiftDay = (d, n) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
 const getEstName = (id, list) => list.find((e) => e.id === id)?.nome || "—";
 
-function createApi(url, key) {
-  const h = (t) => ({ apikey: key, Authorization: `Bearer ${t || key}`, "Content-Type": "application/json", Prefer: "return=representation" });
+function createSupabase(url, key) {
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+// Compatibility shim: wraps supabase client in the same interface used by components
+function createApi(supabase) {
   return {
-    login: async (em, pw) => (await fetch(`${url}/auth/v1/token?grant_type=password`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ email: em, password: pw }) })).json(),
-    refresh: async (refreshToken) => (await fetch(`${url}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refreshToken }) })).json(),
-    signup: async (em, pw) => (await fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ email: em, password: pw }) })).json(),
-    get: async (tbl, t, q = "") => (await fetch(`${url}/rest/v1/${tbl}?${q}`, { headers: h(t) })).json(),
-    post: async (tbl, d, t) => (await fetch(`${url}/rest/v1/${tbl}`, { method: "POST", headers: h(t), body: JSON.stringify(d) })).json(),
-    patch: async (tbl, id, d, t) => (await fetch(`${url}/rest/v1/${tbl}?id=eq.${id}`, { method: "PATCH", headers: h(t), body: JSON.stringify(d) })).json(),
-    del: async (tbl, id, t) => fetch(`${url}/rest/v1/${tbl}?id=eq.${id}`, { method: "DELETE", headers: h(t) }),
-    upsert: async (tbl, d, t) => (await fetch(`${url}/rest/v1/${tbl}`, { method: "POST", headers: { ...h(t), Prefer: "return=representation,resolution=merge-duplicates" }, body: JSON.stringify(d) })).json(),
+    supabase,
+    login: async (em, pw) => {
+      const { data, error } = await supabase.auth.signInWithPassword({ email: em, password: pw });
+      if (error) return { error: true, message: error.message };
+      return { access_token: data.session.access_token, user: data.user };
+    },
+    signup: async (em, pw) => {
+      const { data, error } = await supabase.auth.signUp({ email: em, password: pw });
+      if (error) return { error: true, message: error.message };
+      return { access_token: data.session?.access_token, user: data.user };
+    },
+    logout: async () => supabase.auth.signOut(),
+    getSession: async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session;
+    },
+    get: async (tbl, _tok, q = "") => {
+      let query = supabase.from(tbl).select(q.includes("select=") ? q.split("select=")[1].split("&")[0] : "*");
+      // apply filters from query string
+      q.split("&").forEach(part => {
+        if (!part || part.startsWith("select=") || part.startsWith("order=")) return;
+        const eq = part.match(/^(\w+)=eq\.(.+)$/);
+        const neq = part.match(/^(\w+)=not\.is\.null$/);
+        if (eq) query = query.eq(eq[1], eq[2]);
+        if (neq) query = query.not(neq[1], "is", null);
+      });
+      q.split("&").forEach(part => {
+        const ord = part.match(/^order=(.+)$/);
+        if (ord) { const [col, dir] = ord[1].split("."); query = query.order(col, { ascending: dir !== "desc" }); }
+      });
+      const { data, error } = await query;
+      if (error) { console.error("supabase get error", error); return []; }
+      return data;
+    },
+    post: async (tbl, d, _tok) => {
+      const { data, error } = await supabase.from(tbl).insert(d).select();
+      if (error) return { error: true, message: error.message };
+      return data;
+    },
+    patch: async (tbl, id, d, _tok) => {
+      const { data, error } = await supabase.from(tbl).update(d).eq("id", id).select();
+      if (error) return { error: true, message: error.message };
+      return data;
+    },
+    del: async (tbl, id, _tok) => {
+      const { error } = await supabase.from(tbl).delete().eq("id", id);
+      if (error) console.error("supabase del error", error);
+    },
   };
 }
 
@@ -181,11 +232,11 @@ function AuthScreen({ api, onAuth }) {
         const p = await api.get("profiles", r.access_token, `id=eq.${userId}`);
         const prof = Array.isArray(p) ? p[0] : null;
         if (!prof) { setErr("Perfil não encontrado. Verifique se o cadastro foi concluído."); setLoading(false); return; }
-        onAuth(r.access_token, { ...r.user, refresh_token: r.refresh_token }, prof);
+        onAuth(r.access_token, r.user, prof);
       } else {
         const r = await api.signup(f.email, f.pw);
         if (r.error || r.message) { setErr(r.error_description || r.message || "Erro no registro"); setLoading(false); return; }
-        const tok = r.access_token || (await api.login(f.email, f.pw)).access_token;
+        const loginR = r.access_token ? r : await api.login(f.email, f.pw); const tok = loginR.access_token;
         const uid = r.user?.id || r.id;
         if (!uid || !tok) { setErr("Erro ao criar conta. Tente fazer login."); setLoading(false); return; }
         await api.post("profiles", { id: uid, nome: f.nome, email: f.email, papel: "estagiaria", tipo_estagiaria: f.tipo, carga_horaria_diaria: parseFloat(f.carga) }, tok);
@@ -466,7 +517,7 @@ function Dash({ registros, entregas, estagiarias, backlog }) {
 }
 
 /* ─── INTERN: REGISTRAR ENTREGA ─── */
-function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, userId, api, token, demo, callWithRefresh }) {
+function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, userId, api, token, demo }) {
   const [form, setForm] = useState({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false });
   const [ok, setOk] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -483,8 +534,7 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
     const payload = { numero_procedimento: form.numero_procedimento, tipo_procedimento: form.tipo_procedimento, tipo_manifestacao: form.tipo_manifestacao, crime: form.crime || null, data_vista: form.data_vista || null, num_folhas: form.num_folhas ? parseInt(form.num_folhas) : null, urgente: form.urgente, estagiaria_id: userId, data_entrega: today, hora_entrega: now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), status: "pendente" };
     if (!demo) {
       try {
-        const doPost = (tok) => api.post("entregas", payload, tok);
-        const result = callWithRefresh ? await callWithRefresh(doPost) : await doPost(token);
+        const result = await api.post("entregas", payload, token);
         const saved = Array.isArray(result) ? result[0] : result;
         if (!saved || saved.error || saved.message) throw new Error(saved?.message || "Erro ao salvar");
         setEntregas([...entregas, saved]);
@@ -669,14 +719,13 @@ function EstagiariaTab({ estagiarias, setEstagiarias, registros, entregas, onVie
 /* ─── MAIN APP ─── */
 const ENV_URL = import.meta.env.VITE_SUPABASE_URL || "";
 const ENV_KEY = import.meta.env.VITE_SUPABASE_KEY || "";
-const ENV_API = ENV_URL && ENV_KEY ? createApi(ENV_URL, ENV_KEY) : null;
-
-const SESSION_KEY = "gestao_promotoria_session";
+const ENV_SB = ENV_URL && ENV_KEY ? createSupabase(ENV_URL, ENV_KEY) : null;
+const ENV_API = ENV_SB ? createApi(ENV_SB) : null;
 
 export default function App() {
   const [screen, setScreen] = useState("loading");
   const [api, setApi] = useState(ENV_API);
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(""); // kept for prop compat; supabase manages internally
   const [profile, setProfile] = useState(null);
   const [demo, setDemo] = useState(false);
   const [activeTab, setActiveTab] = useState("");
@@ -691,40 +740,7 @@ export default function App() {
   const [opts, setOpts] = useState(INIT_OPTS);
   const [crimes, setCrimes] = useState([]);
 
-  // Helper: try call, if JWT expired refresh token and retry once
-  const callWithRefresh = async (fn) => {
-    try {
-      const result = await fn(token);
-      if (result && (result.message === "JWT expired" || result.error === "invalid_jwt")) {
-        throw new Error("JWT expired");
-      }
-      return result;
-    } catch (e) {
-      if (e.message === "JWT expired" || String(e).includes("JWT")) {
-        try {
-          const saved = localStorage.getItem(SESSION_KEY);
-          const { refreshTok, url, key } = saved ? JSON.parse(saved) : {};
-          if (!refreshTok) throw new Error("no refresh token");
-          const refreshApi = (url && key) ? createApi(url, key) : ENV_API;
-          const r = await refreshApi.refresh(refreshTok);
-          if (!r.access_token) throw new Error("refresh failed");
-          const newTok = r.access_token;
-          setToken(newTok);
-          try { const s = JSON.parse(localStorage.getItem(SESSION_KEY)); s.tok = newTok; s.refreshTok = r.refresh_token || refreshTok; localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (_) {}
-          return await fn(newTok);
-        } catch (_) {
-          // Refresh failed — force logout
-          try { localStorage.removeItem(SESSION_KEY); } catch (_) {}
-          setScreen("auth"); setProfile(null); setToken("");
-          alert("Sua sessão expirou. Por favor, faça login novamente.");
-          throw e;
-        }
-      }
-      throw e;
-    }
-  };
-
-  const loadData = async (apiRef, tok, papel) => {
+  const loadData = async (apiRef, _tok, papel) => {
     setLoading(true);
     try {
       const [regs, ents, profs, optsData, bl] = await Promise.all([
@@ -754,51 +770,53 @@ export default function App() {
     setLoading(false);
   };
 
-  // Restore session on mount
+  // Supabase handles session persistence and token refresh automatically.
+  // We just listen for auth state changes to drive screen transitions.
   useEffect(() => {
-    const tryRestore = async () => {
-      try {
-        const saved = localStorage.getItem(SESSION_KEY);
-        if (saved) {
-          const { url, key, tok, prof } = JSON.parse(saved);
-          if (tok && prof) {
-            const restoredApi = (url && key) ? createApi(url, key) : ENV_API;
-            if (!restoredApi) { setScreen(ENV_API ? "auth" : "config"); return; }
-            // Validate token with a lightweight query before restoring
-            const check = await restoredApi.get("profiles", tok, `id=eq.${prof.id}`);
-            if (!Array.isArray(check) || check.length === 0) {
-              // Token expired or invalid — clear session and go to login
-              localStorage.removeItem(SESSION_KEY);
-              setScreen(ENV_API ? "auth" : "config");
-              return;
-            }
-            setApi(restoredApi);
-            setToken(tok);
-            setProfile(prof);
-            setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
-            setScreen("app");
-            await loadData(restoredApi, tok, prof.papel);
-            return;
-          }
+    if (!ENV_API) { setScreen("config"); return; }
+    // Check for an existing session on mount
+    ENV_API.supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        const profs = await ENV_API.get("profiles", null, `id=eq.${session.user.id}`);
+        const prof = Array.isArray(profs) ? profs[0] : null;
+        if (prof) {
+          setApi(ENV_API);
+          setToken(session.access_token);
+          setProfile(prof);
+          setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
+          setScreen("app");
+          await loadData(ENV_API, session.access_token, prof.papel);
+        } else {
+          setScreen("auth");
         }
-      } catch (e) { localStorage.removeItem(SESSION_KEY); }
-      setScreen(ENV_API ? "auth" : "config");
-    };
-    tryRestore();
+      } else {
+        setScreen("auth");
+      }
+    });
+    // Listen for future auth changes (token refresh, logout, etc.)
+    const { data: { subscription } } = ENV_API.supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "TOKEN_REFRESHED" && session) {
+        setToken(session.access_token);
+      }
+      if (event === "SIGNED_OUT") {
+        setProfile(null); setToken(""); setScreen("auth");
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []); // eslint-disable-line
 
   const startDemo = () => { setDemo(true); setProfile(MOCK.profile); setRegistros(MOCK.registros); setEntregas(MOCK.entregas); setEstagiarias(MOCK.estagiarias); setBacklog(MOCK.backlog); setCrimes(MOCK.crimes); setActiveTab("dia"); setScreen("app"); };
-  const connect = (url, key) => { const a = createApi(url, key); setApi(a); setScreen("auth"); };
+  const connect = (url, key) => { const sb = createSupabase(url, key); const a = createApi(sb); setApi(a); setScreen("auth"); };
 
-  const onAuth = async (tok, usr, prof) => {
+  const onAuth = async (tok, _usr, prof) => {
+    // supabase-js already persisted the session — just update React state
     setToken(tok); setProfile(prof);
     setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
     setScreen("app");
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ url: ENV_URL || "", key: ENV_KEY || "", tok, refreshTok: usr?.refresh_token || "", prof })); } catch (e) {}
     await loadData(api, tok, prof.papel);
   };
-  const logout = () => {
-    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  const logout = async () => {
+    if (api?.supabase) await api.supabase.auth.signOut(); // supabase clears storage
     setScreen(demo ? "config" : "auth"); setDemo(false); setProfile(null); setToken(""); setRegistros([]); setEntregas([]); setBacklog([]); setViewAs(null);
   };
   const pendCount = entregas.filter((e) => e.status === "pendente").length;
@@ -821,7 +839,7 @@ export default function App() {
         {currentPapel==="admin"&&activeTab==="dia"&&<DiaTrabalho registros={registros} setRegistros={setRegistros} entregas={entregas} setEntregas={setEntregas} backlog={backlog} setBacklog={setBacklog} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} estagiarias={estagiarias} selectedDate={selectedDate} setSelectedDate={setSelectedDate} api={api} token={token} demo={demo}/>}
         {currentPapel==="admin"&&activeTab==="dash"&&<Dash registros={registros} entregas={entregas} estagiarias={estagiarias} backlog={backlog}/>}
         {currentPapel==="admin"&&activeTab==="est"&&<EstagiariaTab estagiarias={estagiarias} setEstagiarias={setEstagiarias} registros={registros} entregas={entregas} onViewAs={handleViewAs} api={api} token={token} demo={demo}/>}
-        {currentPapel==="estagiaria"&&activeTab==="registrar"&&<InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs || profile.id} api={api} token={token} demo={demo} callWithRefresh={callWithRefresh}/>}
+        {currentPapel==="estagiaria"&&activeTab==="registrar"&&<InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
         {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} setEntregas={setEntregas} registros={registros} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
       </div>
     </div>
