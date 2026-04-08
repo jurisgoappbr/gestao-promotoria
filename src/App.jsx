@@ -609,7 +609,7 @@ export default function App() {
       const [regs, ents, profs, optsData, bl] = await Promise.all([
         papel === "admin"
           ? apiRef.get("registros", tok, "order=data_trabalho.desc")
-          : apiRef.get("registros", tok, "entrega_id=not.is.null&select=id,entrega_id,obs_breves,obs_detalhadas"),
+          : apiRef.get("registros", tok, "entrega_id=not.is.null&select=id,entrega_id,obs_breves,obs_detalhadas,crime"),
         apiRef.get("entregas", tok, "order=data_entrega.desc"),
         papel === "admin" ? apiRef.get("profiles", tok, "papel=eq.estagiaria&order=nome.asc") : Promise.resolve([]),
         apiRef.get("opcoes", tok, "order=campo.asc,valor.asc"),
