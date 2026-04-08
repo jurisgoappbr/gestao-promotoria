@@ -343,7 +343,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         <Field label="Data da vista" style={{ flex: 1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e) => upd("data_vista", e.target.value)} /></Field>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
-        <Field label="Crime" style={{ flex: 2 }}><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} /></Field>
+        <Field label="Crime" style={{ flex: 2 }}><DynSelect value={form.crime} onChange={(v) => upd("crime", v)} options={crimes} placeholder="Selecione ou adicione..." onAdd={(v) => { if (!crimes.includes(v)) setCrimes([...crimes, v]); addOpt("crime", v); }} /></Field>
         <Field label="Folhas" style={{ flex: 1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e) => upd("num_folhas", e.target.value)} /></Field>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
@@ -438,7 +438,7 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
       <Field label="Número do procedimento *"><input style={S.input} value={form.numero_procedimento} onChange={(e) => upd("numero_procedimento", e.target.value)} placeholder="0000000-00.0000.0.00.0000" /></Field>
       <Field label="Tipo do procedimento *"><DynSelect value={form.tipo_procedimento} onChange={(v) => upd("tipo_procedimento", v)} options={opts.tipo_procedimento} onAdd={(v) => setOpts({ ...opts, tipo_procedimento: [...opts.tipo_procedimento, v] })} /></Field>
       <Field label="Tipo de manifestação *"><DynSelect value={form.tipo_manifestacao} onChange={(v) => upd("tipo_manifestacao", v)} options={opts.tipo_manifestacao} onAdd={(v) => setOpts({ ...opts, tipo_manifestacao: [...opts.tipo_manifestacao, v] })} /></Field>
-      <Field label="Crime apurado"><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} /></Field>
+      <Field label="Crime apurado"><DynSelect value={form.crime} onChange={(v) => upd("crime", v)} options={crimes} placeholder="Selecione ou adicione..." onAdd={(v) => { if (!crimes.includes(v)) { setCrimes([...crimes, v]); if (!demo) try { api.post("opcoes", { campo: "crime", valor: v }, token); } catch(e) {} } }} /></Field>
       <div style={{ display: "flex", gap: 10 }}>
         <Field label="Data da vista" style={{ flex: 1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e) => upd("data_vista", e.target.value)} /></Field>
         <Field label="Nº de folhas" style={{ flex: 1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e) => upd("num_folhas", e.target.value)} /></Field>
