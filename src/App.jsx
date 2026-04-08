@@ -458,7 +458,7 @@ function InternHist({ entregas, registros, userId }) {
     <h1 style={S.h1}>Meu Histórico</h1>
     <p style={{ color: "#64748b", fontSize: 13, marginBottom: 14 }}>{mine.length} entregas</p>
     <div style={{ ...S.card, overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 750 }}>
-      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observações do promotor</th></tr></thead>
+      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observaçõesr</th></tr></thead>
       <tbody>{mine.map((e) => {
         const reg = regByEntrega[e.id];
         const obsdet = reg?.obs_detalhadas || null;
@@ -481,7 +481,7 @@ function InternHist({ entregas, registros, userId }) {
       })}
       {mine.length===0&&<tr><td colSpan={7} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
     </table></div>
-    {obsPopup && <Modal title="Observação do promotor" onClose={() => setObsPopup(null)}>
+    {obsPopup && <Modal title="Observação do analista" onClose={() => setObsPopup(null)}>
       <div style={{ fontSize: 13, color: "#1e293b", background: "#f8fafc", borderRadius: 6, padding: "12px 14px", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{obsPopup}</div>
     </Modal>}
   </div>);
