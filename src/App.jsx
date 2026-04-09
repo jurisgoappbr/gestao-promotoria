@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { LogOut, Plus, Check, Users, Send, History, X, Bell, Save, Trash2, ChevronLeft, ChevronRight, LayoutDashboard, ClipboardList, Edit3, Eye, Sunrise, Sunset, TrendingDown } from "lucide-react";
+import { LogOut, Plus, Check, Users, Send, History, X, Bell, Save, Trash2, ChevronLeft, ChevronRight, LayoutDashboard, ClipboardList, Edit3, Eye, Sunrise, Sunset, TrendingDown, Settings } from "lucide-react";
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 const font = `'DM Sans', system-ui, sans-serif`;
@@ -227,7 +227,7 @@ function AuthScreen({ api, onAuth }) {
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 function Sidebar({ papel, active, setActive, nome, pendCount, onLogout }) {
   const tabs = papel==="admin"
-    ? [{ key:"dia",  icon:ClipboardList, label:"Dia de Trabalho" },{ key:"dash", icon:LayoutDashboard, label:"Dashboard" },{ key:"est",  icon:Users, label:"Estagiárias" }]
+    ? [{ key:"dia",  icon:ClipboardList, label:"Dia de Trabalho" },{ key:"dash", icon:LayoutDashboard, label:"Dashboard" },{ key:"est",  icon:Users, label:"Estagiárias" },{ key:"opcoes", icon:Settings, label:"Opções" }]
     : [{ key:"registrar", icon:Send,    label:"Registrar Entrega" },{ key:"historico",  icon:History,  label:"Meu Histórico" }];
   return (
     <div style={S.sidebar}>
@@ -798,6 +798,132 @@ function InternHist({ entregas, userId }) {
   );
 }
 
+// ─── ADMIN: OPÇÕES ───────────────────────────────────────────────────────────
+const CAMPO_LABELS = {
+  tipo_procedimento: "Tipo de Procedimento",
+  tipo_manifestacao: "Tipo de Manifestação",
+  grau_correcao:     "Grau de Correção",
+  crime:             "Crimes",
+};
+
+function OpcoesTab({ opts, setOpts, api, token, demo }) {
+  const [editingKey, setEditingKey]   = useState(null); // "campo|valor"
+  const [editValue,  setEditValue]    = useState("");
+  const [saving,     setSaving]       = useState(false);
+  const [adding,     setAdding]       = useState(null);  // campo sendo adicionado
+  const [newValor,   setNewValor]     = useState("");
+
+  const campos = Object.keys(CAMPO_LABELS);
+
+  const startEdit = (campo, valor) => {
+    setEditingKey(`${campo}|${valor}`);
+    setEditValue(valor);
+    setAdding(null);
+  };
+
+  const cancelEdit = () => { setEditingKey(null); setEditValue(""); };
+
+  const saveEdit = async (campo, valorAntigo) => {
+    const valorNovo = editValue.trim();
+    if (!valorNovo || valorNovo === valorAntigo) { cancelEdit(); return; }
+    setSaving(true);
+    if (!demo) {
+      try {
+        // Busca o id da opção pelo campo+valor, depois faz patch
+        const rows = await api.get("opcoes", token, `campo=eq.${campo}&valor=eq.${encodeURIComponent(valorAntigo)}`);
+        const row  = Array.isArray(rows) ? rows[0] : null;
+        if (row) await api.patch("opcoes", row.id, { valor: valorNovo }, token);
+      } catch(e) { console.error(e); }
+    }
+    setOpts((prev) => ({
+      ...prev,
+      [campo]: prev[campo].map((v) => v === valorAntigo ? valorNovo : v),
+    }));
+    cancelEdit();
+    setSaving(false);
+  };
+
+  const deleteOpcao = async (campo, valor) => {
+    if (!demo) {
+      try {
+        const rows = await api.get("opcoes", token, `campo=eq.${campo}&valor=eq.${encodeURIComponent(valor)}`);
+        const row  = Array.isArray(rows) ? rows[0] : null;
+        if (row) await api.del("opcoes", row.id, token);
+      } catch(e) { console.error(e); }
+    }
+    setOpts((prev) => ({ ...prev, [campo]: prev[campo].filter((v) => v !== valor) }));
+  };
+
+  const addOpcao = async (campo) => {
+    const valor = newValor.trim();
+    if (!valor) return;
+    if (opts[campo]?.includes(valor)) { setNewValor(""); setAdding(null); return; }
+    if (!demo) {
+      try { await api.post("opcoes", { campo, valor }, token); } catch(e) { console.error(e); }
+    }
+    setOpts((prev) => ({ ...prev, [campo]: [...(prev[campo]||[]), valor] }));
+    setNewValor(""); setAdding(null);
+  };
+
+  return (
+    <div>
+      <h1 style={S.h1}>Opções</h1>
+      <p style={{ color:"#64748b", fontSize:13, marginBottom:18 }}>Gerencie os valores disponíveis em cada campo do sistema</p>
+      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+        {campos.map((campo) => (
+          <div key={campo} style={S.card}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <h3 style={{ fontSize:13, fontWeight:700 }}>{CAMPO_LABELS[campo]}</h3>
+              <button style={{ ...S.btn("primary"), fontSize:11, padding:"4px 10px" }}
+                onClick={() => { setAdding(campo); setNewValor(""); setEditingKey(null); }}>
+                <Plus size={12}/> Adicionar
+              </button>
+            </div>
+
+            {adding === campo && (
+              <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+                <input style={{ ...S.input, flex:1 }} value={newValor} autoFocus
+                  placeholder="Novo valor..."
+                  onChange={(e) => setNewValor(e.target.value)}
+                  onKeyDown={(e) => { if(e.key==="Enter") addOpcao(campo); if(e.key==="Escape"){ setAdding(null); setNewValor(""); } }}/>
+                <button style={S.btn("success")} onClick={() => addOpcao(campo)}><Check size={13}/></button>
+                <button style={S.btn("ghost")} onClick={() => { setAdding(null); setNewValor(""); }}><X size={13}/></button>
+              </div>
+            )}
+
+            {(!opts[campo] || opts[campo].length === 0) ? (
+              <div style={{ color:"#94a3b8", fontSize:12.5, padding:"8px 0" }}>Nenhum valor cadastrado</div>
+            ) : (
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                {opts[campo].map((valor) => {
+                  const key = `${campo}|${valor}`;
+                  const editing = editingKey === key;
+                  if (editing) return (
+                    <div key={valor} style={{ display:"flex", gap:4, alignItems:"center" }}>
+                      <input style={{ ...S.input, width:160, fontSize:12 }} value={editValue} autoFocus
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => { if(e.key==="Enter") saveEdit(campo,valor); if(e.key==="Escape") cancelEdit(); }}/>
+                      <button style={{ ...S.btn("success"), padding:"4px 8px" }} onClick={() => saveEdit(campo,valor)} disabled={saving}><Check size={12}/></button>
+                      <button style={{ ...S.btn("ghost"),   padding:"4px 8px" }} onClick={cancelEdit}><X size={12}/></button>
+                    </div>
+                  );
+                  return (
+                    <div key={valor} style={{ display:"inline-flex", alignItems:"center", gap:4, background:"#f1f5f9", borderRadius:6, padding:"4px 10px", fontSize:12.5 }}>
+                      <span>{valor}</span>
+                      <Edit3 size={11} style={{ cursor:"pointer", color:"#94a3b8" }} onClick={() => startEdit(campo, valor)}/>
+                      <X size={11} style={{ cursor:"pointer", color:"#94a3b8" }} onClick={() => deleteOpcao(campo, valor)}/>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── ADMIN: ESTAGIÁRIAS ───────────────────────────────────────────────────────
 const TIPOS_EST = [{ value:"graduacao",label:"Graduação" },{ value:"pos",label:"Pós-Graduação" },{ value:"voluntaria",label:"Voluntária" }];
 const getTipoLabel = (v) => TIPOS_EST.find((t)=>t.value===v)?.label||v||"—";
@@ -1034,6 +1160,7 @@ export default function App() {
           {currentPapel==="admin"&&activeTab==="dia"   && <DiaTrabalho registros={registros} setRegistros={setRegistros} entregas={entregas} setEntregas={setEntregas} backlog={backlog} setBacklog={setBacklog} opts={opts} setOpts={setOpts} estagiarias={estagiarias} selectedDate={selectedDate} setSelectedDate={setSelectedDate} api={api||ENV_API} token={token} demo={demo}/>}
           {currentPapel==="admin"&&activeTab==="dash"  && <Dash registros={registros} entregas={entregas} estagiarias={estagiarias}/>}
           {currentPapel==="admin"&&activeTab==="est"   && <EstagiariaTab estagiarias={estagiarias} setEstagiarias={setEstagiarias} registros={registros} entregas={entregas} onViewAs={handleViewAs} api={api||ENV_API} token={token} demo={demo}/>}
+          {currentPapel==="admin"&&activeTab==="opcoes" && <OpcoesTab opts={opts} setOpts={setOpts} api={api||ENV_API} token={token} demo={demo}/>}
           {currentPapel==="estagiaria"&&activeTab==="registrar" && <InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} userId={viewAs||profile.id} api={api||ENV_API} token={token} demo={demo}/>}
           {currentPapel==="estagiaria"&&activeTab==="historico" && <InternHist entregas={entregas} userId={viewAs||profile.id}/>}
         </div>
