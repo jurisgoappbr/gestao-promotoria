@@ -455,10 +455,10 @@ function InternHist({ entregas, registros, userId }) {
           <td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td>
           <td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td>
           <td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td>
-          <td style={{...S.td, maxWidth: 280}}>
-            {obs ? (<div>
-              <div style={{ fontSize: 12, color: "#1e293b", whiteSpace: isExp ? "pre-wrap" : "nowrap", overflow: isExp ? "visible" : "hidden", textOverflow: isExp ? "clip" : "ellipsis", maxWidth: 260 }}>{obs}</div>
-              <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer", userSelect: "none" }} onClick={() => toggleExp(e.id)}>{isExp ? "▲ ver menos" : "▼ ver mais"}</span>
+          <td style={{...S.td, maxWidth: 300}}>
+            {obs ? (<div style={{ display: "flex", alignItems: "flex-start", gap: 4 }}>
+              <span style={{ fontSize: 12, color: "#1e293b", whiteSpace: isExp ? "pre-wrap" : "nowrap", overflow: isExp ? "visible" : "hidden", textOverflow: isExp ? "clip" : "ellipsis", flex: 1, minWidth: 0 }}>{obs}</span>
+              <span style={{ fontSize: 13, color: "#94a3b8", cursor: "pointer", userSelect: "none", flexShrink: 0, lineHeight: "18px" }} title={isExp ? "Recolher" : "Expandir"} onClick={() => toggleExp(e.id)}>{isExp ? "▲" : "▼"}</span>
             </div>) : <span style={{ color: "#94a3b8" }}>—</span>}
           </td>
         </tr>);
