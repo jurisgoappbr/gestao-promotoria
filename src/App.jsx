@@ -28,8 +28,8 @@ const MOCK = {
     { id: 2, numero_procedimento: "1508321-70.2025.8.26.0196", tipo_procedimento: "TC", tipo_manifestacao: "Arquivamento", crime: "147", data_vista: "2026-03-30", num_folhas: null, urgente: false, estagiaria_id: "e6", data_entrega: today, hora_entrega: "10:15", status: "pendente" },
   ],
   registros: [
-    { id: 1, data_trabalho: today, numero_procedimento: "1503933-27.2025.8.26.0196", tipo_procedimento: "IP", data_vista: "2026-03-28", num_folhas: null, crime: "147, § 1", tipo_manifestacao: "Análise", responsavel: "Igor", grau_correcao: null, obs_breves: "Falei com o Dr.", obs_detalhadas: null, acompanhar: false, complicado: false, feedback_tipo: null, feedback_dado: false, entrega_id: null },
-    { id: 2, data_trabalho: today, numero_procedimento: "1501106-97.2026.8.26.0393", tipo_procedimento: "IP", data_vista: "2026-03-30", num_folhas: null, crime: "157", tipo_manifestacao: "Manifestação", responsavel: "Igor", grau_correcao: null, obs_breves: "Temporária e busca domiciliar", obs_detalhadas: null, acompanhar: true, complicado: false, feedback_tipo: null, feedback_dado: false, entrega_id: null },
+    { id: 1, data_trabalho: today, numero_procedimento: "1503933-27.2025.8.26.0196", tipo_procedimento: "IP", data_vista: "2026-03-28", num_folhas: null, crime: "147, § 1", tipo_manifestacao: "Análise", responsavel: "Igor", grau_correcao: null, obs_breves: "Falei com o Dr.", obs_estagiarias: null, acompanhar: false, complicado: false, feedback_tipo: null, feedback_dado: false, entrega_id: null },
+    { id: 2, data_trabalho: today, numero_procedimento: "1501106-97.2026.8.26.0393", tipo_procedimento: "IP", data_vista: "2026-03-30", num_folhas: null, crime: "157", tipo_manifestacao: "Manifestação", responsavel: "Igor", grau_correcao: null, obs_breves: "Temporária e busca domiciliar", obs_estagiarias: null, acompanhar: true, complicado: false, feedback_tipo: null, feedback_dado: false, entrega_id: null },
   ],
   backlog: [{ data: today, pecas_corrigir: 4, pecas_minhas: 2, pecas_estagiarias: 4 }],
   crimes: ["147, § 1", "129, § 13", "129, § 13; 147, § 1", "171", "157", "121", "33, Lei 11.343/06", "155, § 4º", "180", "147"],
@@ -182,7 +182,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [corrigindo, setCorrigindo] = useState(null);
-  const empty = { numero_procedimento: "", tipo_procedimento: "", data_vista: "", num_folhas: "", crime: "", tipo_manifestacao: "", responsavel: "Igor", grau_correcao: "", obs_breves: "", obs_detalhadas: "", acompanhar: false, complicado: false, feedback_tipo: "", feedback_dado: false };
+  const empty = { numero_procedimento: "", tipo_procedimento: "", data_vista: "", num_folhas: "", crime: "", tipo_manifestacao: "", responsavel: "Igor", grau_correcao: "", obs_breves: "", obs_estagiarias: "", acompanhar: false, complicado: false, feedback_tipo: "", feedback_dado: false };
   const [form, setForm] = useState(empty);
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const dayRegs = registros.filter((r) => r.data_trabalho === selectedDate);
@@ -224,7 +224,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
       crime: form.crime || null,
       grau_correcao: form.grau_correcao || null,
       obs_breves: form.obs_breves || null,
-      obs_detalhadas: form.obs_detalhadas || null,
+      obs_estagiarias: form.obs_estagiarias || null,
       acompanhar: form.acompanhar,
       complicado: form.complicado,
       feedback_tipo: form.feedback_tipo || null,
@@ -254,7 +254,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
   };
 
   const startCorr = (ent) => { setCorrigindo(ent); setForm({ ...empty, numero_procedimento: ent.numero_procedimento, tipo_procedimento: ent.tipo_procedimento, tipo_manifestacao: ent.tipo_manifestacao, crime: ent.crime || "", data_vista: ent.data_vista || "", num_folhas: ent.num_folhas || "", responsavel: getEstName(ent.estagiaria_id, estagiarias) }); setShowForm(true); };
-  const startEdit = (r) => { setEditId(r.id); setForm({ numero_procedimento: r.numero_procedimento, tipo_procedimento: r.tipo_procedimento, data_vista: r.data_vista || "", num_folhas: r.num_folhas || "", crime: r.crime || "", tipo_manifestacao: r.tipo_manifestacao, responsavel: r.responsavel, grau_correcao: r.grau_correcao || "", obs_breves: r.obs_breves || "", obs_detalhadas: r.obs_detalhadas || "", acompanhar: r.acompanhar, complicado: r.complicado, feedback_tipo: r.feedback_tipo || "", feedback_dado: r.feedback_dado || false }); setShowForm(true); };
+  const startEdit = (r) => { setEditId(r.id); setForm({ numero_procedimento: r.numero_procedimento, tipo_procedimento: r.tipo_procedimento, data_vista: r.data_vista || "", num_folhas: r.num_folhas || "", crime: r.crime || "", tipo_manifestacao: r.tipo_manifestacao, responsavel: r.responsavel, grau_correcao: r.grau_correcao || "", obs_breves: r.obs_breves || "", obs_estagiarias: r.obs_estagiarias || "", acompanhar: r.acompanhar, complicado: r.complicado, feedback_tipo: r.feedback_tipo || "", feedback_dado: r.feedback_dado || false }); setShowForm(true); };
 
   const delReg = async (id) => {
     const r = registros.find((x) => x.id === id);
@@ -309,7 +309,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
             <td style={S.td}><span style={S.badge("#065f46", "#d1fae5")}>{r.tipo_manifestacao}</span></td>
             <td style={{ ...S.td, fontWeight: r.responsavel === "Igor" ? 400 : 600, color: r.responsavel === "Igor" ? "#64748b" : "#1e293b" }}>{r.responsavel}</td>
             <td style={S.td}>{r.grau_correcao ? <span style={S.badge(r.grau_correcao === "Nada" ? "#065f46" : r.grau_correcao.includes("refazer") ? "#991b1b" : "#92400e", r.grau_correcao === "Nada" ? "#d1fae5" : r.grau_correcao.includes("refazer") ? "#fee2e2" : "#fef3c7")}>{r.grau_correcao}</span> : "—"}</td>
-            <td style={{ ...S.td, fontSize: 11.5, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.obs_detalhadas || r.obs_breves || ""}>{r.obs_breves || "—"}</td>
+            <td style={{ ...S.td, fontSize: 11.5, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.obs_estagiarias || r.obs_breves || ""}>{r.obs_breves || "—"}</td>
             <td style={S.td}>{r.acompanhar && <span style={{ ...S.badge("#1e40af", "#dbeafe"), marginRight: 3 }}>AC</span>}{r.complicado && <span style={{ ...S.badge("#991b1b", "#fee2e2"), marginRight: 3 }}>!</span>}{r.feedback_tipo && <span style={S.badge(r.feedback_dado ? "#065f46" : "#92400e", r.feedback_dado ? "#d1fae5" : "#fef3c7")}>{r.feedback_tipo === "elogio" ? "👍" : "👎"}{r.feedback_dado ? " ✓" : ""}</span>}</td>
             <td style={S.td}><div style={{ display: "flex", gap: 4 }}><Edit3 size={13} style={{ cursor: "pointer", color: "#94a3b8" }} onClick={() => startEdit(r)} /><Trash2 size={13} style={{ cursor: "pointer", color: "#94a3b8" }} onClick={() => delReg(r.id)} /></div></td>
           </tr>))}</tbody></table></div>}
@@ -336,7 +336,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         {form.feedback_tipo && <Field label="Dado?" style={{ flex: 0 }}><label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap", padding: "7px 0" }}><input type="checkbox" checked={form.feedback_dado} onChange={(e) => upd("feedback_dado", e.target.checked)} /> Feito</label></Field>}
       </div>}
       <Field label="Observações breves"><input style={S.input} value={form.obs_breves} onChange={(e) => upd("obs_breves", e.target.value)} placeholder="Nada, Refiz, Orientei..." /></Field>
-      <Field label="Observações detalhadas"><textarea style={{ ...S.input, minHeight: 50, resize: "vertical" }} value={form.obs_detalhadas} onChange={(e) => upd("obs_detalhadas", e.target.value)} /></Field>
+      <Field label="Observações para estagiária"><textarea style={{ ...S.input, minHeight: 50, resize: "vertical" }} value={form.obs_estagiarias} onChange={(e) => upd("obs_estagiarias", e.target.value)} /></Field>
       <div style={{ display: "flex", gap: 16, marginBottom: 10 }}>
         <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer" }}><input type="checkbox" checked={form.acompanhar} onChange={(e) => upd("acompanhar", e.target.checked)} /> Acompanhar</label>
         <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer" }}><input type="checkbox" checked={form.complicado} onChange={(e) => upd("complicado", e.target.checked)} /> Complicado</label>
@@ -430,14 +430,39 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
 }
 
 /* ─── INTERN: HISTÓRICO ─── */
-function InternHist({ entregas, userId }) {
+function InternHist({ entregas, registros, userId }) {
+  const [expanded, setExpanded] = useState({});
+  const toggleExp = (id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  // Busca o registro correspondente à entrega para pegar obs_estagiarias
+  const getObs = (entregaId) => {
+    const reg = registros.find((r) => r.entrega_id === entregaId);
+    return reg?.obs_estagiarias || null;
+  };
+
   const mine = entregas.filter((e) => e.estagiaria_id === userId).sort((a, b) => (b.data_entrega + b.hora_entrega).localeCompare(a.data_entrega + a.hora_entrega));
   return (<div>
     <h1 style={S.h1}>Meu Histórico</h1>
     <p style={{ color: "#64748b", fontSize: 13, marginBottom: 14 }}>{mine.length} entregas</p>
     <div style={S.card}><table style={{ width: "100%", borderCollapse: "collapse" }}>
-      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th></tr></thead>
-      <tbody>{mine.map((e) => (<tr key={e.id}><td style={S.td}>{fmtDate(e.data_entrega)}</td><td style={{...S.td,fontFamily:"monospace",fontSize:12}}>{e.hora_entrega}</td><td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td><td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td><td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td><td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td></tr>))}
+      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observações</th></tr></thead>
+      <tbody>{mine.map((e) => {
+        const obs = getObs(e.id);
+        const isExp = expanded[e.id];
+        return (<tr key={e.id}>
+          <td style={S.td}>{fmtDate(e.data_entrega)}</td>
+          <td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td>
+          <td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td>
+          <td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td>
+          <td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td>
+          <td style={{...S.td, maxWidth: 280}}>
+            {obs ? (<div>
+              <div style={{ fontSize: 12, color: "#1e293b", whiteSpace: isExp ? "pre-wrap" : "nowrap", overflow: isExp ? "visible" : "hidden", textOverflow: isExp ? "clip" : "ellipsis", maxWidth: 260 }}>{obs}</div>
+              <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer", userSelect: "none" }} onClick={() => toggleExp(e.id)}>{isExp ? "▲ ver menos" : "▼ ver mais"}</span>
+            </div>) : <span style={{ color: "#94a3b8" }}>—</span>}
+          </td>
+        </tr>);
+      })}
       {mine.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
     </table></div></div>);
 }
@@ -651,7 +676,7 @@ export default function App() {
         {currentPapel==="admin"&&activeTab==="dash"&&<Dash registros={registros} entregas={entregas} estagiarias={estagiarias} backlog={backlog}/>}
         {currentPapel==="admin"&&activeTab==="est"&&<EstagiariaTab estagiarias={estagiarias} setEstagiarias={setEstagiarias} registros={registros} entregas={entregas} onViewAs={handleViewAs} sb={sb} demo={demo}/>}
         {currentPapel==="estagiaria"&&activeTab==="registrar"&&<InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs || profile.id} sb={sb} demo={demo}/>}
-        {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} userId={viewAs || profile.id}/>}
+        {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} registros={registros} userId={viewAs || profile.id}/>}
       </div>
     </div>
   </div>);
