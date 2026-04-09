@@ -431,13 +431,11 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
 
 /* ─── INTERN: HISTÓRICO ─── */
 function InternHist({ entregas, registros, userId }) {
-  const [expanded, setExpanded] = useState({});
-  const toggleExp = (id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  const [obsModal, setObsModal] = useState(null); // { proc, obs, elogio }
 
-  // Busca o registro correspondente à entrega para pegar obs_estagiarias
-  const getObs = (entregaId) => {
+  const getReg = (entregaId) => {
     const reg = registros.find((r) => r.entrega_id === entregaId);
-    return reg?.obs_estagiarias || null;
+    return { obs: reg?.obs_estagiarias || null, elogio: reg?.feedback_tipo === "elogio" };
   };
 
   const mine = entregas.filter((e) => e.estagiaria_id === userId).sort((a, b) => (b.data_entrega + b.hora_entrega).localeCompare(a.data_entrega + a.hora_entrega));
@@ -447,24 +445,39 @@ function InternHist({ entregas, registros, userId }) {
     <div style={S.card}><table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead><tr><th style={S.th}>Data</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observações</th></tr></thead>
       <tbody>{mine.map((e) => {
-        const obs = getObs(e.id);
-        const isExp = expanded[e.id];
+        const { obs, elogio } = getReg(e.id);
         return (<tr key={e.id}>
           <td style={S.td}>{fmtDate(e.data_entrega)}</td>
           <td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td>
           <td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td>
           <td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td>
           <td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td>
-          <td style={{...S.td, maxWidth: 300}}>
-            {obs ? (<div style={{ display: "flex", alignItems: "flex-start", gap: 4 }}>
-              <span style={{ fontSize: 12, color: "#1e293b", whiteSpace: isExp ? "pre-wrap" : "nowrap", overflow: isExp ? "visible" : "hidden", textOverflow: isExp ? "clip" : "ellipsis", flex: 1, minWidth: 0 }}>{obs}</span>
-              <span style={{ fontSize: 13, color: "#94a3b8", cursor: "pointer", userSelect: "none", flexShrink: 0, lineHeight: "18px" }} title={isExp ? "Recolher" : "Expandir"} onClick={() => toggleExp(e.id)}>{isExp ? "▲" : "▼"}</span>
-            </div>) : <span style={{ color: "#94a3b8" }}>—</span>}
+          <td style={{...S.td, maxWidth: 220}}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              {elogio && <span title="Parabéns!" style={{ fontSize: 14, lineHeight: 1, flexShrink: 0 }}>👏</span>}
+              {obs ? (<>
+                <span style={{ fontSize: 12, color: "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>{obs}</span>
+                <Eye size={13} style={{ cursor: "pointer", color: "#2563eb", flexShrink: 0 }} title="Ver observação completa" onClick={() => setObsModal({ proc: e.numero_procedimento, obs, elogio })} />
+              </>) : (!elogio && <span style={{ color: "#94a3b8" }}>—</span>)}
+            </div>
           </td>
         </tr>);
       })}
       {mine.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
-    </table></div></div>);
+    </table></div>
+    {obsModal && (
+      <Modal title={`Observações — ${obsModal.proc}`} onClose={() => setObsModal(null)}>
+        {obsModal.elogio && <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+          <span style={{ fontSize: 20 }}>👏</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#065f46" }}>Igor elogiou essa peça!</span>
+        </div>}
+        {obsModal.obs && <p style={{ fontSize: 13.5, color: "#1e293b", lineHeight: 1.65, whiteSpace: "pre-wrap", margin: 0 }}>{obsModal.obs}</p>}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+          <button style={S.btn("ghost")} onClick={() => setObsModal(null)}>Fechar</button>
+        </div>
+      </Modal>
+    )}
+  </div>);
 }
 
 /* ─── ADMIN: ESTAGIÁRIAS ─── */
