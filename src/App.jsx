@@ -606,7 +606,7 @@ export default function App() {
     setLoading(true);
     try {
       const [regsRes, entsRes, profsRes, optsRes, blRes] = await Promise.all([
-        papel === "admin" ? sbRef.from("registros").select("*").order("data_trabalho", { ascending: false }) : Promise.resolve({ data: [] }),
+        sbRef.from("registros").select("*").order("data_trabalho", { ascending: false }),
         sbRef.from("entregas").select("*").order("data_entrega", { ascending: false }),
         papel === "admin" ? sbRef.from("profiles").select("*").eq("papel", "estagiaria").order("nome", { ascending: true }) : Promise.resolve({ data: [] }),
         sbRef.from("opcoes").select("*").order("campo", { ascending: true }).order("valor", { ascending: true }),
