@@ -123,18 +123,7 @@ function DynSelect({ value, onChange, options, onAdd, placeholder, style:st }) {
   );
 }
 
-// CrimeInput: autocomplete com datalist — ID fixo para evitar dessincronização
-function CrimeInput({ value, onChange, suggestions }) {
-  return (
-    <>
-      <input list="crime-datalist" style={S.input} value={value}
-        onChange={(e)=>onChange(e.target.value)} placeholder="Ex: 129, § 13" autoComplete="off" />
-      <datalist id="crime-datalist">
-        {suggestions.map((s)=><option key={s} value={s}/>)}
-      </datalist>
-    </>
-  );
-}
+// CrimeInput removido — campo crime agora usa DynSelect + tabela opcoes
 
 // ─── TELA DE CONFIGURAÇÃO ─────────────────────────────────────────────────────
 function ConfigScreen({ onConnect, onDemo }) {
@@ -405,7 +394,7 @@ function BacklogCard({ backlog, setBacklog, selectedDate, api, token, demo }) {
 }
 
 // ─── ADMIN: DIA DE TRABALHO ───────────────────────────────────────────────────
-function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, setBacklog, opts, setOpts, crimes, setCrimes, estagiarias, selectedDate, setSelectedDate, api, token, demo }) {
+function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, setBacklog, opts, setOpts, estagiarias, selectedDate, setSelectedDate, api, token, demo }) {
   const emptyForm = { numero_procedimento:"", tipo_procedimento:"", data_vista:"", num_folhas:"", crime:"", tipo_manifestacao:"", responsavel:"Igor", grau_correcao:"", obs_breves:"", obs_detalhadas:"", acompanhar:false, complicado:false, feedback_tipo:"", feedback_dado:false };
   const [showForm,    setShowForm]   = useState(false);
   const [editId,      setEditId]     = useState(null);
@@ -425,7 +414,6 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
 
   const saveReg = async () => {
     if (!form.numero_procedimento||!form.tipo_procedimento||!form.tipo_manifestacao) return;
-    if (form.crime && !crimes.includes(form.crime)) setCrimes((prev)=>[...prev, form.crime]);
     const clean = {
       numero_procedimento: form.numero_procedimento,
       tipo_procedimento:   form.tipo_procedimento,
@@ -575,7 +563,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
             <Field label="Data da vista" style={{ flex:1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e)=>upd("data_vista",e.target.value)}/></Field>
           </div>
           <div style={{ display:"flex", gap:10 }}>
-            <Field label="Crime" style={{ flex:2 }}><CrimeInput value={form.crime} onChange={(v)=>upd("crime",v)} suggestions={crimes}/></Field>
+            <Field label="Crime" style={{ flex:2 }}><DynSelect value={form.crime} onChange={(v)=>upd("crime",v)} options={opts.crime} placeholder="Selecione ou adicione..." onAdd={(v)=>{ setOpts((p)=>({ ...p, crime:[...p.crime,v] })); addOpt("crime",v); }}/></Field>
             <Field label="Folhas" style={{ flex:1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e)=>upd("num_folhas",e.target.value)}/></Field>
           </div>
           <div style={{ display:"flex", gap:10 }}>
@@ -703,7 +691,7 @@ function Dash({ registros, entregas, estagiarias }) {
 }
 
 // ─── ESTAGIÁRIA: REGISTRAR ENTREGA ────────────────────────────────────────────
-function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, userId, api, token, demo }) {
+function InternReg({ entregas, setEntregas, opts, setOpts, userId, api, token, demo }) {
   const emptyForm = { numero_procedimento:"", tipo_procedimento:"", tipo_manifestacao:"", crime:"", data_vista:"", num_folhas:"", urgente:false };
   const [form, setForm] = useState(emptyForm);
   const [ok,   setOk]   = useState(false);
@@ -711,7 +699,6 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
 
   const submit = async () => {
     if (!form.numero_procedimento||!form.tipo_procedimento||!form.tipo_manifestacao) return;
-    if (form.crime && !crimes.includes(form.crime)) setCrimes((prev)=>[...prev, form.crime]);
     const now = new Date();
     const payload = {
       numero_procedimento: form.numero_procedimento,
@@ -759,7 +746,7 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
         <Field label="Tipo de manifestação *">
           <DynSelect value={form.tipo_manifestacao} onChange={(v)=>upd("tipo_manifestacao",v)} options={opts.tipo_manifestacao} onAdd={(v)=>setOpts((p)=>({ ...p, tipo_manifestacao:[...p.tipo_manifestacao,v] }))}/>
         </Field>
-        <Field label="Crime apurado"><CrimeInput value={form.crime} onChange={(v)=>upd("crime",v)} suggestions={crimes}/></Field>
+        <Field label="Crime apurado"><DynSelect value={form.crime} onChange={(v)=>upd("crime",v)} options={opts.crime} placeholder="Selecione ou adicione..." onAdd={async (v)=>{ setOpts((p)=>({ ...p, crime:[...p.crime,v] })); if(!demo) try { await api.post("opcoes",{ campo:"crime", valor:v },token); } catch(e){} }}/></Field>
         <div style={{ display:"flex", gap:10 }}>
           <Field label="Data da vista" style={{ flex:1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e)=>upd("data_vista",e.target.value)}/></Field>
           <Field label="Nº de folhas" style={{ flex:1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e)=>upd("num_folhas",e.target.value)}/></Field>
@@ -934,8 +921,8 @@ export default function App() {
   const [entregas,     setEntregas]     = useState([]);
   const [estagiarias,  setEstagiarias]  = useState([]);
   const [backlog,      setBacklog]      = useState([]);
-  const [opts,         setOpts]         = useState(INIT_OPTS);
-  const [crimes,       setCrimes]       = useState([]);
+  const [opts,         setOpts]         = useState({ ...INIT_OPTS, crime:[] });
+
 
   // ── Carrega dados do Supabase ─────────────────────────────────────────────
   const loadData = useCallback(async (apiRef, tok, papel) => {
@@ -952,13 +939,10 @@ export default function App() {
       setEntregas(Array.isArray(ents)   ? ents  : []);
       setEstagiarias(Array.isArray(profs)? profs : []);
       setBacklog(Array.isArray(bl)      ? bl    : []);
-      const optsMap = { tipo_procedimento:[...INIT_OPTS.tipo_procedimento], tipo_manifestacao:[...INIT_OPTS.tipo_manifestacao], grau_correcao:[...INIT_OPTS.grau_correcao] };
+      const optsMap = { tipo_procedimento:[...INIT_OPTS.tipo_procedimento], tipo_manifestacao:[...INIT_OPTS.tipo_manifestacao], grau_correcao:[...INIT_OPTS.grau_correcao], crime:[] };
       (Array.isArray(optsData)?optsData:[]).forEach((o)=>{ if(optsMap[o.campo]&&!optsMap[o.campo].includes(o.valor)) optsMap[o.campo].push(o.valor); });
       setOpts(optsMap);
-      const crimeSet = new Set();
-      (Array.isArray(regs)?regs:[]).forEach((r)=>{ if(r.crime) crimeSet.add(r.crime); });
-      (Array.isArray(ents)?ents:[]).forEach((e)=>{ if(e.crime) crimeSet.add(e.crime); });
-      setCrimes([...crimeSet]);
+      // crimes agora vêm da tabela opcoes (campo="crime"), carregados junto com optsData
     } catch(e) { console.error("Erro ao carregar dados:", e); }
     setLoading(false);
   // loadData não muda — as funções set* do useState são estáveis
@@ -991,7 +975,7 @@ export default function App() {
   const startDemo = () => {
     setDemo(true); setProfile(MOCK.profile); setRegistros(MOCK.registros);
     setEntregas(MOCK.entregas); setEstagiarias(MOCK.estagiarias);
-    setBacklog(MOCK.backlog); setCrimes(MOCK.crimes);
+    setBacklog(MOCK.backlog);
     setActiveTab("dia"); setScreen("app");
   };
 
@@ -1047,10 +1031,10 @@ export default function App() {
           Visualizando como: {getEstName(viewAs,estagiarias)} — <span style={{ textDecoration:"underline", cursor:"pointer" }} onClick={exitViewAs}>voltar ao admin</span>
         </div>}
         <div style={S.main}>
-          {currentPapel==="admin"&&activeTab==="dia"   && <DiaTrabalho registros={registros} setRegistros={setRegistros} entregas={entregas} setEntregas={setEntregas} backlog={backlog} setBacklog={setBacklog} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} estagiarias={estagiarias} selectedDate={selectedDate} setSelectedDate={setSelectedDate} api={api||ENV_API} token={token} demo={demo}/>}
+          {currentPapel==="admin"&&activeTab==="dia"   && <DiaTrabalho registros={registros} setRegistros={setRegistros} entregas={entregas} setEntregas={setEntregas} backlog={backlog} setBacklog={setBacklog} opts={opts} setOpts={setOpts} estagiarias={estagiarias} selectedDate={selectedDate} setSelectedDate={setSelectedDate} api={api||ENV_API} token={token} demo={demo}/>}
           {currentPapel==="admin"&&activeTab==="dash"  && <Dash registros={registros} entregas={entregas} estagiarias={estagiarias}/>}
           {currentPapel==="admin"&&activeTab==="est"   && <EstagiariaTab estagiarias={estagiarias} setEstagiarias={setEstagiarias} registros={registros} entregas={entregas} onViewAs={handleViewAs} api={api||ENV_API} token={token} demo={demo}/>}
-          {currentPapel==="estagiaria"&&activeTab==="registrar" && <InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs||profile.id} api={api||ENV_API} token={token} demo={demo}/>}
+          {currentPapel==="estagiaria"&&activeTab==="registrar" && <InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} userId={viewAs||profile.id} api={api||ENV_API} token={token} demo={demo}/>}
           {currentPapel==="estagiaria"&&activeTab==="historico" && <InternHist entregas={entregas} userId={viewAs||profile.id}/>}
         </div>
       </div>
