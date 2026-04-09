@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { useState, useEffect, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { LogOut, Plus, Check, Users, FileText, Send, History, X, Search, Bell, Save, Trash2, ChevronLeft, ChevronRight, LayoutDashboard, ClipboardList, Edit3, AlertTriangle, Eye } from "lucide-react";
+import { LogOut, Plus, Check, Users, FileText, Send, History, X, Search, Bell, Save, Trash2, ChevronLeft, ChevronRight, LayoutDashboard, ClipboardList, Edit3, AlertTriangle, Eye, Sunrise, Sunset, TrendingDown } from "lucide-react";
 
 const font = `'DM Sans', system-ui, sans-serif`;
 const today = new Date().toISOString().slice(0, 10);
@@ -31,7 +30,10 @@ const MOCK = {
     { id: 1, data_trabalho: today, numero_procedimento: "1503933-27.2025.8.26.0196", tipo_procedimento: "IP", data_vista: "2026-03-28", num_folhas: null, crime: "147, § 1", tipo_manifestacao: "Análise", responsavel: "Igor", grau_correcao: null, obs_breves: "Falei com o Dr.", obs_detalhadas: null, acompanhar: false, complicado: false, feedback_tipo: null, feedback_dado: false, entrega_id: null },
     { id: 2, data_trabalho: today, numero_procedimento: "1501106-97.2026.8.26.0393", tipo_procedimento: "IP", data_vista: "2026-03-30", num_folhas: null, crime: "157", tipo_manifestacao: "Manifestação", responsavel: "Igor", grau_correcao: null, obs_breves: "Temporária e busca domiciliar", obs_detalhadas: null, acompanhar: true, complicado: false, feedback_tipo: null, feedback_dado: false, entrega_id: null },
   ],
-  backlog: [{ data: today, pecas_corrigir: 4, pecas_minhas: 2, pecas_estagiarias: 4 }],
+  backlog: [
+    { id: 1, data: today, momento: "inicio", pecas_corrigir: 4, pecas_minhas: 2, pecas_estagiarias: 4 },
+    { id: 2, data: today, momento: "fim",    pecas_corrigir: 1, pecas_minhas: 0, pecas_estagiarias: 2 },
+  ],
   crimes: ["147, § 1", "129, § 13", "129, § 13; 147, § 1", "171", "157", "121", "33, Lei 11.343/06", "155, § 4º", "180", "147"],
 };
 
@@ -59,67 +61,16 @@ const fmtDate = (d) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR")
 const shiftDay = (d, n) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
 const getEstName = (id, list) => list.find((e) => e.id === id)?.nome || "—";
 
-function createSupabase(url, key) {
-  return createClient(url, key, {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: false,
-    },
-  });
-}
-
-// Compatibility shim: wraps supabase client in the same interface used by components
-function createApi(supabase) {
+function createApi(url, key) {
+  const h = (t) => ({ apikey: key, Authorization: `Bearer ${t || key}`, "Content-Type": "application/json", Prefer: "return=representation" });
   return {
-    supabase,
-    login: async (em, pw) => {
-      const { data, error } = await supabase.auth.signInWithPassword({ email: em, password: pw });
-      if (error) return { error: true, message: error.message };
-      return { access_token: data.session.access_token, user: data.user };
-    },
-    signup: async (em, pw) => {
-      const { data, error } = await supabase.auth.signUp({ email: em, password: pw });
-      if (error) return { error: true, message: error.message };
-      return { access_token: data.session?.access_token, user: data.user };
-    },
-    logout: async () => supabase.auth.signOut(),
-    getSession: async () => {
-      const { data } = await supabase.auth.getSession();
-      return data.session;
-    },
-    get: async (tbl, _tok, q = "") => {
-      let query = supabase.from(tbl).select(q.includes("select=") ? q.split("select=")[1].split("&")[0] : "*");
-      // apply filters from query string
-      q.split("&").forEach(part => {
-        if (!part || part.startsWith("select=") || part.startsWith("order=")) return;
-        const eq = part.match(/^(\w+)=eq\.(.+)$/);
-        const neq = part.match(/^(\w+)=not\.is\.null$/);
-        if (eq) query = query.eq(eq[1], eq[2]);
-        if (neq) query = query.not(neq[1], "is", null);
-      });
-      q.split("&").forEach(part => {
-        const ord = part.match(/^order=(.+)$/);
-        if (ord) { const [col, dir] = ord[1].split("."); query = query.order(col, { ascending: dir !== "desc" }); }
-      });
-      const { data, error } = await query;
-      if (error) { console.error("supabase get error", error); return []; }
-      return data;
-    },
-    post: async (tbl, d, _tok) => {
-      const { data, error } = await supabase.from(tbl).insert(d).select();
-      if (error) return { error: true, message: error.message };
-      return data;
-    },
-    patch: async (tbl, id, d, _tok) => {
-      const { data, error } = await supabase.from(tbl).update(d).eq("id", id).select();
-      if (error) return { error: true, message: error.message };
-      return data;
-    },
-    del: async (tbl, id, _tok) => {
-      const { error } = await supabase.from(tbl).delete().eq("id", id);
-      if (error) console.error("supabase del error", error);
-    },
+    login: async (em, pw) => (await fetch(`${url}/auth/v1/token?grant_type=password`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ email: em, password: pw }) })).json(),
+    signup: async (em, pw) => (await fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: key, "Content-Type": "application/json" }, body: JSON.stringify({ email: em, password: pw }) })).json(),
+    get: async (tbl, t, q = "") => (await fetch(`${url}/rest/v1/${tbl}?${q}`, { headers: h(t) })).json(),
+    post: async (tbl, d, t) => (await fetch(`${url}/rest/v1/${tbl}`, { method: "POST", headers: h(t), body: JSON.stringify(d) })).json(),
+    patch: async (tbl, id, d, t) => (await fetch(`${url}/rest/v1/${tbl}?id=eq.${id}`, { method: "PATCH", headers: h(t), body: JSON.stringify(d) })).json(),
+    del: async (tbl, id, t) => fetch(`${url}/rest/v1/${tbl}?id=eq.${id}`, { method: "DELETE", headers: h(t) }),
+    upsert: async (tbl, d, t) => (await fetch(`${url}/rest/v1/${tbl}`, { method: "POST", headers: { ...h(t), Prefer: "return=representation,resolution=merge-duplicates" }, body: JSON.stringify(d) })).json(),
   };
 }
 
@@ -147,57 +98,139 @@ function DynSelect({ value, onChange, options, onAdd, placeholder, style: st }) 
     <option value="__add">+ Adicionar novo...</option>
   </select>);
 }
-function CrimeInput({ value, onChange, suggestions, onAdd }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState(value);
-  const ref = useRef(null);
+function CrimeInput({ value, onChange, suggestions }) {
+  const lid = useMemo(() => "cr" + Math.random().toString(36).slice(2, 7), []);
+  return (<><input list={lid} style={S.input} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Ex: 129, § 13" /><datalist id={lid}>{suggestions.map((s) => <option key={s} value={s} />)}</datalist></>);
+}
 
-  // sync external value changes
-  useEffect(() => { setQuery(value); }, [value]);
+/* ─── BACKLOG CARD ─── */
+function BacklogCard({ backlog, setBacklog, selectedDate, api, token, demo }) {
+  const blInicio = backlog.find((b) => b.data === selectedDate && b.momento === "inicio") || { pecas_corrigir: "", pecas_minhas: "", pecas_estagiarias: "" };
+  const blFim    = backlog.find((b) => b.data === selectedDate && b.momento === "fim")    || { pecas_corrigir: "", pecas_minhas: "", pecas_estagiarias: "" };
 
-  // close on outside click
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const hasInicio = !!backlog.find((b) => b.data === selectedDate && b.momento === "inicio");
+  const hasFim    = !!backlog.find((b) => b.data === selectedDate && b.momento === "fim");
 
-  const filtered = query.trim()
-    ? suggestions.filter((s) => s.toLowerCase().includes(query.toLowerCase()))
-    : suggestions;
-  const isNew = query.trim() && !suggestions.map(s=>s.toLowerCase()).includes(query.trim().toLowerCase());
+  const updateBL = async (momento, fld, val) => {
+    const v = val === "" ? null : parseInt(val) || 0;
+    const ex = backlog.find((b) => b.data === selectedDate && b.momento === momento);
+    if (ex) {
+      const updated = { ...ex, [fld]: v ?? 0 };
+      setBacklog(backlog.map((b) => (b.data === selectedDate && b.momento === momento) ? updated : b));
+      if (!demo) try { await api.patch("backlog", ex.id, { [fld]: v ?? 0 }, token); } catch (e) {}
+    } else {
+      const newBL = { data: selectedDate, momento, pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0, [fld]: v ?? 0 };
+      if (!demo) {
+        try {
+          const result = await api.post("backlog", newBL, token);
+          const row = Array.isArray(result) ? result[0] : result;
+          setBacklog([...backlog, row]);
+        } catch (e) {
+          setBacklog([...backlog, { ...newBL, id: Date.now() }]);
+        }
+      } else {
+        setBacklog([...backlog, { ...newBL, id: Date.now() }]);
+      }
+    }
+  };
 
-  const select = (s) => { onChange(s); setQuery(s); setOpen(false); };
-  const handleAdd = () => { if (query.trim() && onAdd) { onAdd(query.trim()); onChange(query.trim()); setOpen(false); } };
+  // Calcula delta (fim - inicio); null se algum dos dois não existe
+  const delta = (field) => {
+    if (!hasInicio || !hasFim) return null;
+    const i = blInicio[field] ?? 0;
+    const f = blFim[field] ?? 0;
+    return f - i;
+  };
+
+  const DeltaBadge = ({ field }) => {
+    const d = delta(field);
+    if (d === null) return <span style={{ fontSize: 10, color: "#cbd5e1" }}>—</span>;
+    const neg = d < 0;
+    const zer = d === 0;
+    return (
+      <span style={{
+        fontSize: 10.5, fontWeight: 700, padding: "1px 6px", borderRadius: 99,
+        background: neg ? "#d1fae5" : zer ? "#f1f5f9" : "#fee2e2",
+        color: neg ? "#065f46" : zer ? "#64748b" : "#991b1b",
+      }}>
+        {neg ? `▼ ${Math.abs(d)}` : zer ? "=" : `▲ ${d}`}
+      </span>
+    );
+  };
+
+  const fields = [
+    { key: "pecas_corrigir",   label: "Corrigir" },
+    { key: "pecas_minhas",     label: "Minhas" },
+    { key: "pecas_estagiarias", label: "Estagiárias" },
+  ];
+
+  const Section = ({ momento, label, icon: Icon, color, bl }) => (
+    <div style={{ flex: 1, minWidth: 200 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8, fontSize: 11.5, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        <Icon size={13} /> {label}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        {fields.map((f) => (
+          <Field key={f.key} label={f.label} style={{ marginBottom: 0, flex: 1 }}>
+            <input
+              type="number" min="0"
+              style={{ ...S.input, textAlign: "center" }}
+              value={bl[f.key] ?? ""}
+              onChange={(e) => updateBL(momento, f.key, e.target.value)}
+              placeholder="0"
+            />
+          </Field>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <div style={{ display: "flex", alignItems: "center", border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", overflow: "hidden", boxShadow: open ? "0 0 0 2px #bfdbfe" : "none" }}>
-        <input
-          style={{ ...S.input, border: "none", boxShadow: "none", flex: 1 }}
-          value={query}
-          placeholder="Buscar ou adicionar crime..."
-          onChange={(e) => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
-        />
-        {query && <span style={{ paddingRight: 8, color: "#94a3b8", cursor: "pointer", fontSize: 14 }} onClick={() => { setQuery(""); onChange(""); setOpen(false); }}>×</span>}
+    <div style={{ ...S.card, padding: "14px 16px" }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Backlog</div>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <Section momento="inicio" label="Início do dia" icon={Sunrise} color="#f59e0b" bl={blInicio} />
+
+        {/* Divisor */}
+        <div style={{ width: 1, background: "#e2e8f0", alignSelf: "stretch", marginTop: 20 }} />
+
+        <Section momento="fim" label="Fim do dia" icon={Sunset} color="#6366f1" bl={blFim} />
+
+        {/* Delta */}
+        {(hasInicio || hasFim) && (
+          <div style={{ minWidth: 140 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8, fontSize: 11.5, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <TrendingDown size={13} /> Balanço
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingTop: 2 }}>
+              {fields.map((f) => (
+                <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 11, color: "#94a3b8", flex: 1 }}>{f.label}</span>
+                  <DeltaBadge field={f.key} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-      {open && (filtered.length > 0 || isNew) && (
-        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", marginTop: 4, maxHeight: 220, overflowY: "auto" }}>
-          {filtered.map((s) => (
-            <div key={s} onMouseDown={() => select(s)} style={{ padding: "8px 12px", fontSize: 13, cursor: "pointer", borderBottom: "1px solid #f8fafc", background: s === value ? "#eff6ff" : "#fff", color: s === value ? "#1d4ed8" : "#1e293b", fontWeight: s === value ? 600 : 400 }}
-              onMouseEnter={(e) => { if (s !== value) e.currentTarget.style.background = "#f8fafc"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = s === value ? "#eff6ff" : "#fff"; }}>
-              {s}
-            </div>
-          ))}
-          {isNew && (
-            <div onMouseDown={handleAdd} style={{ padding: "8px 12px", fontSize: 13, cursor: "pointer", color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, borderTop: filtered.length > 0 ? "1px solid #e2e8f0" : "none", background: "#f0f9ff" }}>
-              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Adicionar "{query.trim()}" ao sistema
-            </div>
-          )}
-        </div>
-      )}
+
+      {/* Resumo textual quando ambos preenchidos */}
+      {hasInicio && hasFim && (() => {
+        const totalI = (blInicio.pecas_corrigir || 0) + (blInicio.pecas_minhas || 0) + (blInicio.pecas_estagiarias || 0);
+        const totalF = (blFim.pecas_corrigir || 0) + (blFim.pecas_minhas || 0) + (blFim.pecas_estagiarias || 0);
+        const diff = totalF - totalI;
+        if (totalI === 0 && totalF === 0) return null;
+        return (
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #f1f5f9", fontSize: 12, color: "#475569" }}>
+            Pendências totais: <strong>{totalI}</strong> → <strong>{totalF}</strong>
+            {diff !== 0 && (
+              <span style={{ marginLeft: 6, fontWeight: 700, color: diff < 0 ? "#10b981" : "#ef4444" }}>
+                ({diff < 0 ? `${Math.abs(diff)} a menos` : `${diff} a mais`})
+              </span>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -229,19 +262,19 @@ function AuthScreen({ api, onAuth }) {
         if (r.error || r.message) { setErr(r.error_description || r.message || "Erro no login"); setLoading(false); return; }
         const userId = r.user?.id;
         if (!userId) { setErr("Resposta inesperada do servidor"); setLoading(false); return; }
-        const { data: pData1 } = await api.supabase.from("profiles").select("*").eq("id", userId).single();
-        const prof = pData1 || null;
+        const p = await api.get("profiles", r.access_token, `id=eq.${userId}`);
+        const prof = Array.isArray(p) ? p[0] : null;
         if (!prof) { setErr("Perfil não encontrado. Verifique se o cadastro foi concluído."); setLoading(false); return; }
         onAuth(r.access_token, r.user, prof);
       } else {
         const r = await api.signup(f.email, f.pw);
         if (r.error || r.message) { setErr(r.error_description || r.message || "Erro no registro"); setLoading(false); return; }
-        const loginR = r.access_token ? r : await api.login(f.email, f.pw); const tok = loginR.access_token;
+        const tok = r.access_token || (await api.login(f.email, f.pw)).access_token;
         const uid = r.user?.id || r.id;
         if (!uid || !tok) { setErr("Erro ao criar conta. Tente fazer login."); setLoading(false); return; }
         await api.post("profiles", { id: uid, nome: f.nome, email: f.email, papel: "estagiaria", tipo_estagiaria: f.tipo, carga_horaria_diaria: parseFloat(f.carga) }, tok);
-        const { data: pData2 } = await api.supabase.from("profiles").select("*").eq("id", uid).single();
-        const prof = pData2 || null;
+        const p = await api.get("profiles", tok, `id=eq.${uid}`);
+        const prof = Array.isArray(p) ? p[0] : null;
         if (!prof) { setErr("Perfil criado mas não encontrado. Tente fazer login."); setLoading(false); return; }
         onAuth(tok, { id: uid }, prof);
       }
@@ -288,39 +321,19 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [corrigindo, setCorrigindo] = useState(null);
-  const [obsPopup, setObsPopup] = useState(null); // { breves, detalhadas }
   const empty = { numero_procedimento: "", tipo_procedimento: "", data_vista: "", num_folhas: "", crime: "", tipo_manifestacao: "", responsavel: "Igor", grau_correcao: "", obs_breves: "", obs_detalhadas: "", acompanhar: false, complicado: false, feedback_tipo: "", feedback_dado: false };
   const [form, setForm] = useState(empty);
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const dayRegs = registros.filter((r) => r.data_trabalho === selectedDate);
-  const pendentes = entregas.filter((e) => e.status === "pendente" || e.status === "refazer" || e.status === "refeito").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
-  const dayBL = backlog.find((b) => b.data === selectedDate) || { pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0 };
-
-  const updateBL = async (fld, val) => {
-    const v = parseInt(val) || 0;
-    const ex = backlog.find((b) => b.data === selectedDate);
-    if (ex) {
-      const updated = { ...ex, [fld]: v };
-      setBacklog(backlog.map((b) => b.data === selectedDate ? updated : b));
-      if (!demo) try { await api.patch("backlog", ex.id, { [fld]: v }, token); } catch (e) {}
-    } else {
-      const newBL = { data: selectedDate, pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0, [fld]: v };
-      if (!demo) {
-        try { const [r] = await api.post("backlog", newBL, token); setBacklog([...backlog, r]); } catch (e) { setBacklog([...backlog, { ...newBL, id: Date.now() }]); }
-      } else { setBacklog([...backlog, { ...newBL, id: Date.now() }]); }
-    }
-  };
+  const pendentes = entregas.filter((e) => e.status === "pendente").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
 
   const addOpt = async (campo, valor) => {
     if (!demo) try { await api.post("opcoes", { campo, valor }, token); } catch (e) {}
   };
 
-  const saveReg = async (refazer = false) => {
+  const saveReg = async () => {
     if (!form.numero_procedimento || !form.tipo_procedimento || !form.tipo_manifestacao) return;
-    if (form.crime && !crimes.includes(form.crime)) {
-      setCrimes([...crimes, form.crime]);
-      if (!demo) try { await api.post("opcoes", { campo: "crime", valor: form.crime }, token); } catch (e) {}
-    }
+    if (form.crime && !crimes.includes(form.crime)) setCrimes([...crimes, form.crime]);
     const clean = {
       numero_procedimento: form.numero_procedimento,
       tipo_procedimento: form.tipo_procedimento,
@@ -348,14 +361,13 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
           const [result] = await api.post("registros", payload, token);
           setRegistros([...registros, result]);
           if (corrigindo) {
-            const novoStatus = refazer ? "refazer" : "corrigido";
-            await api.patch("entregas", corrigindo.id, { status: novoStatus }, token);
-            setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: novoStatus } : e));
+            await api.patch("entregas", corrigindo.id, { status: "corrigido" }, token);
+            setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: "corrigido" } : e));
           }
-        } catch (e) { alert("Falha ao salvar no banco. Verifique sua conexão e tente novamente."); return; }
+        } catch (e) { setRegistros([...registros, { ...payload, id: Date.now() }]); }
       } else {
         setRegistros([...registros, { ...payload, id: Date.now() }]);
-        if (corrigindo) { const novoStatus = refazer ? "refazer" : "corrigido"; setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: novoStatus } : e)); }
+        if (corrigindo) setEntregas(entregas.map((e) => e.id === corrigindo.id ? { ...e, status: "corrigido" } : e));
       }
     }
     setForm(empty); setShowForm(false); setCorrigindo(null);
@@ -391,16 +403,21 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
       </div>
       <button style={S.btn("primary")} onClick={() => { setForm(empty); setEditId(null); setCorrigindo(null); setShowForm(true); }}><Plus size={14} /> Novo Registro</button>
     </div>
-    <div style={{ ...S.card, display: "flex", gap: 14, alignItems: "center", padding: "12px 16px" }}>
-      <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", whiteSpace: "nowrap" }}>Backlog:</span>
-      <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_corrigir} onChange={(e) => updateBL("pecas_corrigir", e.target.value)} /></Field>
-      <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_minhas} onChange={(e) => updateBL("pecas_minhas", e.target.value)} /></Field>
-      <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_estagiarias} onChange={(e) => updateBL("pecas_estagiarias", e.target.value)} /></Field>
-    </div>
+
+    {/* Backlog Card extraído como componente próprio */}
+    <BacklogCard
+      backlog={backlog}
+      setBacklog={setBacklog}
+      selectedDate={selectedDate}
+      api={api}
+      token={token}
+      demo={demo}
+    />
+
     {pendentes.length > 0 && <div style={{ ...S.card, borderLeft: "4px solid #f59e0b" }}>
       <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}><Bell size={14} color="#f59e0b" /> Pendentes de Correção ({pendentes.length})</h3>
       {pendentes.map((e) => (<div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #f8fafc" }}>
-        <div style={{ fontSize: 12.5 }}><span style={{ fontWeight: 600 }}>{getEstName(e.estagiaria_id, estagiarias)}</span><span style={{ color: "#64748b" }}> — {e.tipo_manifestacao} — </span><span style={{ fontFamily: "monospace", fontSize: 11.5 }}>{e.numero_procedimento}</span><span style={{ color: "#94a3b8", marginLeft: 6, fontSize: 11 }}>{fmtDate(e.data_entrega)} {e.hora_entrega}</span>{e.urgente && <span style={{ ...S.badge("#991b1b", "#fee2e2"), marginLeft: 6 }}>URGENTE</span>}{e.status === "refazer" && <span style={{ ...S.badge("#fff", "#7c3aed"), marginLeft: 6 }}>↩ REFAZER</span>}{e.status === "refeito" && <><span style={{ ...S.badge("#fff", "#7c3aed"), marginLeft: 6 }}>↩ REFAZER</span><span style={{ ...S.badge("#fff", "#059669"), marginLeft: 4 }}>✓ REFEITO</span></>}</div>
+        <div style={{ fontSize: 12.5 }}><span style={{ fontWeight: 600 }}>{getEstName(e.estagiaria_id, estagiarias)}</span><span style={{ color: "#64748b" }}> — {e.tipo_manifestacao} — </span><span style={{ fontFamily: "monospace", fontSize: 11.5 }}>{e.numero_procedimento}</span><span style={{ color: "#94a3b8", marginLeft: 6, fontSize: 11 }}>{fmtDate(e.data_entrega)} {e.hora_entrega}</span>{e.urgente && <span style={{ ...S.badge("#991b1b", "#fee2e2"), marginLeft: 6 }}>URGENTE</span>}</div>
         <button style={S.btn("warn")} onClick={() => startCorr(e)}><Edit3 size={12} /> Corrigir</button>
       </div>))}
     </div>}
@@ -408,7 +425,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
       <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Registros — {fmtDate(selectedDate)} ({dayRegs.length})</h3>
       {dayRegs.length === 0 ? <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", padding: 20 }}>Nenhum registro neste dia</div>
         : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
-          <thead><tr><th style={S.th}>Número</th><th style={S.th}>Tipo</th><th style={S.th}>Vista</th><th style={S.th}>Crime</th><th style={S.th}>Manifestação</th><th style={S.th}>Resp.</th><th style={S.th}>Correção</th><th style={S.th}>Observações</th><th style={S.th}>Flags</th><th style={S.th}></th></tr></thead>
+          <thead><tr><th style={S.th}>Número</th><th style={S.th}>Tipo</th><th style={S.th}>Vista</th><th style={S.th}>Crime</th><th style={S.th}>Manifestação</th><th style={S.th}>Resp.</th><th style={S.th}>Correção</th><th style={S.th}>Obs.</th><th style={S.th}>Flags</th><th style={S.th}></th></tr></thead>
           <tbody>{dayRegs.map((r) => (<tr key={r.id} style={{ background: r.responsavel !== "Igor" ? "#f0f9ff" : "transparent" }}>
             <td style={{ ...S.td, fontFamily: "monospace", fontSize: 11 }}>{r.numero_procedimento}</td>
             <td style={S.td}><span style={S.badge("#1e40af", "#dbeafe")}>{r.tipo_procedimento}</span></td>
@@ -417,28 +434,11 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
             <td style={S.td}><span style={S.badge("#065f46", "#d1fae5")}>{r.tipo_manifestacao}</span></td>
             <td style={{ ...S.td, fontWeight: r.responsavel === "Igor" ? 400 : 600, color: r.responsavel === "Igor" ? "#64748b" : "#1e293b" }}>{r.responsavel}</td>
             <td style={S.td}>{r.grau_correcao ? <span style={S.badge(r.grau_correcao === "Nada" ? "#065f46" : r.grau_correcao.includes("refazer") ? "#991b1b" : "#92400e", r.grau_correcao === "Nada" ? "#d1fae5" : r.grau_correcao.includes("refazer") ? "#fee2e2" : "#fef3c7")}>{r.grau_correcao}</span> : "—"}</td>
-            <td style={{ ...S.td, maxWidth: 160 }}>
-              {(r.obs_breves || r.obs_detalhadas) ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} onClick={() => setObsPopup({ breves: r.obs_breves, detalhadas: r.obs_detalhadas })}>
-                  <span style={{ fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120, display: "inline-block" }}>{r.obs_breves || r.obs_detalhadas}</span>
-                  <span style={{ color: "#2563eb", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>▾</span>
-                </div>
-              ) : "—"}
-            </td>
+            <td style={{ ...S.td, fontSize: 11.5, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.obs_detalhadas || r.obs_breves || ""}>{r.obs_breves || "—"}</td>
             <td style={S.td}>{r.acompanhar && <span style={{ ...S.badge("#1e40af", "#dbeafe"), marginRight: 3 }}>AC</span>}{r.complicado && <span style={{ ...S.badge("#991b1b", "#fee2e2"), marginRight: 3 }}>!</span>}{r.feedback_tipo && <span style={S.badge(r.feedback_dado ? "#065f46" : "#92400e", r.feedback_dado ? "#d1fae5" : "#fef3c7")}>{r.feedback_tipo === "elogio" ? "👍" : "👎"}{r.feedback_dado ? " ✓" : ""}</span>}</td>
             <td style={S.td}><div style={{ display: "flex", gap: 4 }}><Edit3 size={13} style={{ cursor: "pointer", color: "#94a3b8" }} onClick={() => startEdit(r)} /><Trash2 size={13} style={{ cursor: "pointer", color: "#94a3b8" }} onClick={() => delReg(r.id)} /></div></td>
           </tr>))}</tbody></table></div>}
     </div>
-    {obsPopup && <Modal title="Observações" onClose={() => setObsPopup(null)}>
-      {obsPopup.breves && <div style={{ marginBottom: obsPopup.detalhadas ? 12 : 0 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: 4 }}>Resumo</div>
-        <div style={{ fontSize: 13, color: "#1e293b", background: "#f8fafc", borderRadius: 6, padding: "8px 12px" }}>{obsPopup.breves}</div>
-      </div>}
-      {obsPopup.detalhadas && <div>
-        <div style={{ fontSize: 10.5, fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: 4 }}>Detalhadas</div>
-        <div style={{ fontSize: 13, color: "#1e293b", background: "#f8fafc", borderRadius: 6, padding: "8px 12px", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{obsPopup.detalhadas}</div>
-      </div>}
-    </Modal>}
     {showForm && <Modal title={corrigindo ? "Corrigir Entrega" : editId ? "Editar Registro" : "Novo Registro"} onClose={() => { setShowForm(false); setCorrigindo(null); setEditId(null); setForm(empty); }}>
       <Field label="Número do procedimento *"><input style={S.input} value={form.numero_procedimento} onChange={(e) => upd("numero_procedimento", e.target.value)} placeholder="0000000-00.0000.0.00.0000" /></Field>
       <div style={{ display: "flex", gap: 10 }}>
@@ -446,7 +446,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         <Field label="Data da vista" style={{ flex: 1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e) => upd("data_vista", e.target.value)} /></Field>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
-        <Field label="Crime" style={{ flex: 2 }}><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} onAdd={(v) => { if (!crimes.includes(v)) setCrimes([...crimes, v]); addOpt("crime", v); }} /></Field>
+        <Field label="Crime" style={{ flex: 2 }}><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} /></Field>
         <Field label="Folhas" style={{ flex: 1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e) => upd("num_folhas", e.target.value)} /></Field>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
@@ -466,10 +466,9 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer" }}><input type="checkbox" checked={form.acompanhar} onChange={(e) => upd("acompanhar", e.target.checked)} /> Acompanhar</label>
         <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer" }}><input type="checkbox" checked={form.complicado} onChange={(e) => upd("complicado", e.target.checked)} /> Complicado</label>
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <button style={S.btn("ghost")} onClick={() => { setShowForm(false); setCorrigindo(null); setEditId(null); setForm(empty); }}>Cancelar</button>
-        {corrigindo && <button style={{ ...S.btn("danger"), gap: 6 }} onClick={() => { if (!form.obs_detalhadas?.trim()) { alert("Preencha as Observações detalhadas explicando o que deve ser refeito."); return; } saveReg(true); }} title="Devolve a tarefa para a estagiária refazer">↩ Pedir para Refazer</button>}
-        <button style={S.btn("primary")} onClick={() => saveReg(false)}><Save size={13} /> {editId ? "Salvar" : corrigindo ? "Registrar Correção" : "Registrar"}</button>
+        <button style={S.btn("primary")} onClick={saveReg}><Save size={13} /> {editId ? "Salvar" : corrigindo ? "Registrar Correção" : "Registrar"}</button>
       </div>
     </Modal>}
   </div>);
@@ -520,46 +519,26 @@ function Dash({ registros, entregas, estagiarias, backlog }) {
 function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, userId, api, token, demo }) {
   const [form, setForm] = useState({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false });
   const [ok, setOk] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveErr, setSaveErr] = useState("");
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const submit = async () => {
     if (!form.numero_procedimento || !form.tipo_procedimento || !form.tipo_manifestacao) return;
-    setSaving(true); setSaveErr("");
-    if (form.crime && !crimes.includes(form.crime)) {
-      setCrimes([...crimes, form.crime]);
-      if (!demo) try { await api.post("opcoes", { campo: "crime", valor: form.crime }, token); } catch (e) {}
-    }
+    if (form.crime && !crimes.includes(form.crime)) setCrimes([...crimes, form.crime]);
     const now = new Date();
     const payload = { numero_procedimento: form.numero_procedimento, tipo_procedimento: form.tipo_procedimento, tipo_manifestacao: form.tipo_manifestacao, crime: form.crime || null, data_vista: form.data_vista || null, num_folhas: form.num_folhas ? parseInt(form.num_folhas) : null, urgente: form.urgente, estagiaria_id: userId, data_entrega: today, hora_entrega: now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), status: "pendente" };
     if (!demo) {
-      try {
-        const result = await api.post("entregas", payload, token);
-        const saved = Array.isArray(result) ? result[0] : result;
-        if (!saved || saved.error || saved.message) throw new Error(saved?.message || "Erro ao salvar");
-        setEntregas([...entregas, saved]);
-        setForm({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false });
-        setOk(true); setTimeout(() => setOk(false), 4000);
-      } catch (e) {
-        setSaveErr("Falha ao salvar no banco de dados. Verifique sua conexão e tente novamente.");
-      }
-    } else {
-      setEntregas([...entregas, { ...payload, id: Date.now() }]);
-      setForm({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false });
-      setOk(true); setTimeout(() => setOk(false), 4000);
-    }
-    setSaving(false);
+      try { const [result] = await api.post("entregas", payload, token); setEntregas([...entregas, result]); } catch (e) { setEntregas([...entregas, { ...payload, id: Date.now() }]); }
+    } else { setEntregas([...entregas, { ...payload, id: Date.now() }]); }
+    setForm({ numero_procedimento: "", tipo_procedimento: "", tipo_manifestacao: "", crime: "", data_vista: "", num_folhas: "", urgente: false }); setOk(true); setTimeout(() => setOk(false), 3000);
   };
   return (<div>
     <h1 style={S.h1}>Registrar Entrega</h1>
     <p style={{ color: "#64748b", fontSize: 13, marginBottom: 16 }}>Informe a peça que você elaborou</p>
-    {ok && <div style={{ ...S.card, borderLeft: "4px solid #10b981", background: "#f0fdf4", display: "flex", alignItems: "center", gap: 8 }}><Check size={16} color="#10b981"/><span style={{ fontWeight: 600, color: "#065f46", fontSize: 13 }}>Entrega registrada com sucesso!</span></div>}
-    {saveErr && <div style={{ ...S.card, borderLeft: "4px solid #ef4444", background: "#fef2f2", display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontWeight: 600, color: "#991b1b", fontSize: 13 }}>⚠️ {saveErr}</span></div>}
+    {ok && <div style={{ ...S.card, borderLeft: "4px solid #10b981", background: "#f0fdf4", display: "flex", alignItems: "center", gap: 8 }}><Check size={16} color="#10b981"/><span style={{ fontWeight: 600, color: "#065f46", fontSize: 13 }}>Entrega registrada!</span></div>}
     <div style={{ ...S.card, maxWidth: 480 }}>
       <Field label="Número do procedimento *"><input style={S.input} value={form.numero_procedimento} onChange={(e) => upd("numero_procedimento", e.target.value)} placeholder="0000000-00.0000.0.00.0000" /></Field>
       <Field label="Tipo do procedimento *"><DynSelect value={form.tipo_procedimento} onChange={(v) => upd("tipo_procedimento", v)} options={opts.tipo_procedimento} onAdd={(v) => setOpts({ ...opts, tipo_procedimento: [...opts.tipo_procedimento, v] })} /></Field>
       <Field label="Tipo de manifestação *"><DynSelect value={form.tipo_manifestacao} onChange={(v) => upd("tipo_manifestacao", v)} options={opts.tipo_manifestacao} onAdd={(v) => setOpts({ ...opts, tipo_manifestacao: [...opts.tipo_manifestacao, v] })} /></Field>
-      <Field label="Crime apurado"><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} onAdd={(v) => { if (!crimes.includes(v)) { setCrimes([...crimes, v]); if (!demo) try { api.post("opcoes", { campo: "crime", valor: v }, token); } catch(e) {} } }} /></Field>
+      <Field label="Crime apurado"><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} /></Field>
       <div style={{ display: "flex", gap: 10 }}>
         <Field label="Data da vista" style={{ flex: 1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e) => upd("data_vista", e.target.value)} /></Field>
         <Field label="Nº de folhas" style={{ flex: 1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e) => upd("num_folhas", e.target.value)} /></Field>
@@ -568,61 +547,21 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
         <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, cursor: "pointer", color: "#ef4444", fontWeight: form.urgente ? 700 : 400 }}><input type="checkbox" checked={form.urgente} onChange={(e) => upd("urgente", e.target.checked)} /> Urgente</label>
         <span style={{ fontSize: 12, color: "#94a3b8" }}>Registrado em: <strong>{new Date().toLocaleString("pt-BR")}</strong></span>
       </div>
-      <button style={{ ...S.btn("primary"), width: "100%", justifyContent: "center", padding: "9px", opacity: saving ? 0.7 : 1 }} onClick={submit} disabled={saving||!form.numero_procedimento||!form.tipo_procedimento||!form.tipo_manifestacao}><Send size={13}/> {saving ? "Salvando..." : "Registrar Entrega"}</button>
+      <button style={{ ...S.btn("primary"), width: "100%", justifyContent: "center", padding: "9px" }} onClick={submit} disabled={!form.numero_procedimento||!form.tipo_procedimento||!form.tipo_manifestacao}><Send size={13}/> Registrar Entrega</button>
     </div></div>);
 }
 
 /* ─── INTERN: HISTÓRICO ─── */
-function InternHist({ entregas, setEntregas, registros, userId, api, token, demo }) {
-  const [obsPopup, setObsPopup] = useState(null);
+function InternHist({ entregas, userId }) {
   const mine = entregas.filter((e) => e.estagiaria_id === userId).sort((a, b) => (b.data_entrega + b.hora_entrega).localeCompare(a.data_entrega + a.hora_entrega));
-  const regByEntrega = useMemo(() => {
-    const m = {};
-    (registros || []).forEach((r) => { if (r.entrega_id) m[r.entrega_id] = r; });
-    return m;
-  }, [registros]);
   return (<div>
     <h1 style={S.h1}>Meu Histórico</h1>
     <p style={{ color: "#64748b", fontSize: 13, marginBottom: 14 }}>{mine.length} entregas</p>
-    <div style={{ ...S.card, overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 750 }}>
-      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observações do promotor</th></tr></thead>
-      <tbody>{mine.map((e) => {
-        const reg = regByEntrega[e.id];
-        const obsdet = reg?.obs_detalhadas || null;
-        return (<tr key={e.id}>
-          <td style={S.td}>{fmtDate(e.data_entrega)}</td>
-          <td style={{...S.td,fontFamily:"monospace",fontSize:12}}>{e.hora_entrega}</td>
-          <td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td>
-          <td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td>
-          <td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td>
-          <td style={S.td}>
-            {e.status==="pendente" && <span style={S.badge("#92400e","#fef3c7")}>Pendente</span>}
-            {e.status==="corrigido" && <span style={S.badge("#065f46","#d1fae5")}>Corrigido ✓</span>}
-            {e.status==="refeito" && <span style={S.badge("#065f46","#d1fae5")}>Refeito ✓</span>}
-            {e.status==="refazer" && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <span style={{ ...S.badge("#fff","#7c3aed") }}>↩ Refazer</span>
-              <button style={{ fontSize: 11, padding: "3px 8px", borderRadius: 99, border: "1.5px solid #059669", background: "transparent", color: "#059669", fontWeight: 600, cursor: "pointer", fontFamily: font }} onClick={async () => {
-                if (!demo) try { await api.patch("entregas", e.id, { status: "refeito" }, token); } catch(err) { alert("Erro ao atualizar. Tente novamente."); return; }
-                setEntregas(entregas.map((x) => x.id === e.id ? { ...x, status: "refeito" } : x));
-              }}>✓ Refeito</button>
-            </div>}
-          </td>
-          <td style={{ ...S.td, maxWidth: 210 }}>
-            {obsdet ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} onClick={() => setObsPopup(obsdet)}>
-                <span style={{ fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170, display: "inline-block" }}>{obsdet}</span>
-                <span style={{ color: "#2563eb", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>▾</span>
-              </div>
-            ) : "—"}
-          </td>
-        </tr>);
-      })}
-      {mine.length===0&&<tr><td colSpan={7} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
-    </table></div>
-    {obsPopup && <Modal title="Observação do promotor" onClose={() => setObsPopup(null)}>
-      <div style={{ fontSize: 13, color: "#1e293b", background: "#f8fafc", borderRadius: 6, padding: "12px 14px", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{obsPopup}</div>
-    </Modal>}
-  </div>);
+    <div style={S.card}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Hora</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th></tr></thead>
+      <tbody>{mine.map((e) => (<tr key={e.id}><td style={S.td}>{fmtDate(e.data_entrega)}</td><td style={{...S.td,fontFamily:"monospace",fontSize:12}}>{e.hora_entrega}</td><td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td><td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td><td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td><td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td></tr>))}
+      {mine.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
+    </table></div></div>);
 }
 
 /* ─── ADMIN: ESTAGIÁRIAS ─── */
@@ -719,13 +658,12 @@ function EstagiariaTab({ estagiarias, setEstagiarias, registros, entregas, onVie
 /* ─── MAIN APP ─── */
 const ENV_URL = import.meta.env.VITE_SUPABASE_URL || "";
 const ENV_KEY = import.meta.env.VITE_SUPABASE_KEY || "";
-const ENV_SB = ENV_URL && ENV_KEY ? createSupabase(ENV_URL, ENV_KEY) : null;
-const ENV_API = ENV_SB ? createApi(ENV_SB) : null;
+const ENV_API = ENV_URL && ENV_KEY ? createApi(ENV_URL, ENV_KEY) : null;
 
 export default function App() {
-  const [screen, setScreen] = useState("loading");
+  const [screen, setScreen] = useState(ENV_API ? "auth" : "config");
   const [api, setApi] = useState(ENV_API);
-  const [token, setToken] = useState(""); // kept for prop compat; supabase manages internally
+  const [token, setToken] = useState("");
   const [profile, setProfile] = useState(null);
   const [demo, setDemo] = useState(false);
   const [activeTab, setActiveTab] = useState("");
@@ -740,20 +678,17 @@ export default function App() {
   const [opts, setOpts] = useState(INIT_OPTS);
   const [crimes, setCrimes] = useState([]);
 
-  const loadData = async (apiRef, _tok, papel) => {
+  const loadData = async (apiRef, tok, papel) => {
     setLoading(true);
-    const sb = apiRef.supabase;
     try {
-      const [regsR, entsR, profsR, optsR, blR] = await Promise.all([
-        papel === "admin"
-          ? sb.from("registros").select("*").order("data_trabalho", { ascending: false })
-          : sb.from("registros").select("id,entrega_id,obs_breves,obs_detalhadas,crime").not("entrega_id", "is", null),
-        sb.from("entregas").select("*").order("data_entrega", { ascending: false }),
-        papel === "admin" ? sb.from("profiles").select("*").eq("papel", "estagiaria").order("nome") : Promise.resolve({ data: [] }),
-        sb.from("opcoes").select("*").order("campo").order("valor"),
-        papel === "admin" ? sb.from("backlog").select("*").order("data", { ascending: false }) : Promise.resolve({ data: [] }),
+      const [regs, ents, profs, optsData, bl] = await Promise.all([
+        papel === "admin" ? apiRef.get("registros", tok, "order=data_trabalho.desc") : Promise.resolve([]),
+        apiRef.get("entregas", tok, "order=data_entrega.desc"),
+        papel === "admin" ? apiRef.get("profiles", tok, "papel=eq.estagiaria&order=nome.asc") : Promise.resolve([]),
+        apiRef.get("opcoes", tok, "order=campo.asc,valor.asc"),
+        // Busca ambos os momentos; ordena por data e momento para consistência
+        papel === "admin" ? apiRef.get("backlog", tok, "order=data.desc,momento.asc") : Promise.resolve([]),
       ]);
-      const [regs, ents, profs, optsData, bl] = [regsR.data||[], entsR.data||[], profsR.data||[], optsR.data||[], blR.data||[]];
       setRegistros(Array.isArray(regs) ? regs : []);
       setEntregas(Array.isArray(ents) ? ents : []);
       setEstagiarias(Array.isArray(profs) ? profs : []);
@@ -766,68 +701,27 @@ export default function App() {
       const crimeSet = new Set();
       (Array.isArray(regs) ? regs : []).forEach((r) => { if (r.crime) crimeSet.add(r.crime); });
       (Array.isArray(ents) ? ents : []).forEach((e) => { if (e.crime) crimeSet.add(e.crime); });
-      (Array.isArray(optsData) ? optsData : []).forEach((o) => { if (o.campo === "crime") crimeSet.add(o.valor); });
       setCrimes([...crimeSet]);
     } catch (e) { console.error("Erro ao carregar dados:", e); }
     setLoading(false);
   };
 
-  // Supabase handles session persistence and token refresh automatically.
-  // We just listen for auth state changes to drive screen transitions.
-  useEffect(() => {
-    if (!ENV_API) { setScreen("config"); return; }
-    // Check for an existing session on mount
-    ENV_API.supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
-        const { data: profData } = await ENV_API.supabase.from("profiles").select("*").eq("id", session.user.id).single();
-        const prof = profData || null;
-        if (prof) {
-          setApi(ENV_API);
-          setToken(session.access_token);
-          setProfile(prof);
-          setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
-          setScreen("app");
-          await loadData(ENV_API, session.access_token, prof.papel);
-        } else {
-          setScreen("auth");
-        }
-      } else {
-        setScreen("auth");
-      }
-    });
-    // Listen for future auth changes (token refresh, logout, etc.)
-    const { data: { subscription } } = ENV_API.supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "TOKEN_REFRESHED" && session) {
-        setToken(session.access_token);
-      }
-      if (event === "SIGNED_OUT") {
-        setProfile(null); setToken(""); setScreen("auth");
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []); // eslint-disable-line
-
   const startDemo = () => { setDemo(true); setProfile(MOCK.profile); setRegistros(MOCK.registros); setEntregas(MOCK.entregas); setEstagiarias(MOCK.estagiarias); setBacklog(MOCK.backlog); setCrimes(MOCK.crimes); setActiveTab("dia"); setScreen("app"); };
-  const connect = (url, key) => { const sb = createSupabase(url, key); const a = createApi(sb); setApi(a); setScreen("auth"); };
+  const connect = (url, key) => { const a = createApi(url, key); setApi(a); setScreen("auth"); };
 
-  const onAuth = async (tok, _usr, prof) => {
-    // supabase-js already persisted the session — just update React state
+  const onAuth = async (tok, usr, prof) => {
     setToken(tok); setProfile(prof);
     setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
     setScreen("app");
     await loadData(api, tok, prof.papel);
   };
-  const logout = async () => {
-    if (api?.supabase) await api.supabase.auth.signOut(); // supabase clears storage
-    setScreen(demo ? "config" : "auth"); setDemo(false); setProfile(null); setToken(""); setRegistros([]); setEntregas([]); setBacklog([]); setViewAs(null);
-  };
+  const logout = () => { setScreen(demo ? "config" : "auth"); setDemo(false); setProfile(null); setToken(""); setRegistros([]); setEntregas([]); setBacklog([]); setViewAs(null); };
   const pendCount = entregas.filter((e) => e.status === "pendente").length;
   const handleViewAs = (id) => { setViewAs(id); setActiveTab("registrar"); };
   const exitViewAs = () => { setViewAs(null); setActiveTab("est"); };
   const currentPapel = viewAs ? "estagiaria" : profile?.papel;
   const currentNome = viewAs ? getEstName(viewAs, estagiarias) : profile?.nome;
 
-  if (screen === "loading") return (<div style={{ ...S.page, alignItems: "center", justifyContent: "center" }}><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" /><div style={{ fontSize: 16, color: "#64748b" }}>Carregando...</div></div>);
   if (screen === "config") return <ConfigScreen onConnect={connect} onDemo={startDemo} />;
   if (screen === "auth") return <AuthScreen api={api} onAuth={onAuth} />;
   if (loading) return (<div style={{ ...S.page, alignItems: "center", justifyContent: "center" }}><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" /><div style={{ fontSize: 16, color: "#64748b" }}>Carregando dados...</div></div>);
@@ -842,7 +736,7 @@ export default function App() {
         {currentPapel==="admin"&&activeTab==="dash"&&<Dash registros={registros} entregas={entregas} estagiarias={estagiarias} backlog={backlog}/>}
         {currentPapel==="admin"&&activeTab==="est"&&<EstagiariaTab estagiarias={estagiarias} setEstagiarias={setEstagiarias} registros={registros} entregas={entregas} onViewAs={handleViewAs} api={api} token={token} demo={demo}/>}
         {currentPapel==="estagiaria"&&activeTab==="registrar"&&<InternReg entregas={entregas} setEntregas={setEntregas} opts={opts} setOpts={setOpts} crimes={crimes} setCrimes={setCrimes} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
-        {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} setEntregas={setEntregas} registros={registros} userId={viewAs || profile.id} api={api} token={token} demo={demo}/>}
+        {currentPapel==="estagiaria"&&activeTab==="historico"&&<InternHist entregas={entregas} userId={viewAs || profile.id}/>}
       </div>
     </div>
   </div>);
