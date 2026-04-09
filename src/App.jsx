@@ -99,8 +99,14 @@ function DynSelect({ value, onChange, options, onAdd, placeholder, style: st }) 
   </select>);
 }
 function CrimeInput({ value, onChange, suggestions }) {
-  const lid = useMemo(() => "cr" + Math.random().toString(36).slice(2, 7), []);
-  return (<><input list={lid} style={S.input} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Ex: 129, § 13" /><datalist id={lid}>{suggestions.map((s) => <option key={s} value={s} />)}</datalist></>);
+  return (
+    <>
+      <input list="crime-datalist" style={S.input} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Ex: 129, § 13" autoComplete="off" />
+      <datalist id="crime-datalist">
+        {suggestions.map((s) => <option key={s} value={s} />)}
+      </datalist>
+    </>
+  );
 }
 
 /* ─── BACKLOG CARD ─── */
@@ -708,6 +714,21 @@ export default function App() {
   const [viewAs, setViewAs] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Restaura sessão após F5 (sessionStorage — dura até fechar a aba)
+  useEffect(() => {
+    if (demo) return;
+    const savedToken   = sessionStorage.getItem("app_token");
+    const savedProfile = sessionStorage.getItem("app_profile");
+    if (savedToken && savedProfile && ENV_API) {
+      const prof = JSON.parse(savedProfile);
+      setToken(savedToken);
+      setProfile(prof);
+      setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
+      setScreen("app");
+      loadData(ENV_API, savedToken, prof.papel);
+    }
+  }, []);
+
   const [registros, setRegistros] = useState([]);
   const [entregas, setEntregas] = useState([]);
   const [estagiarias, setEstagiarias] = useState([]);
@@ -747,12 +768,18 @@ export default function App() {
   const connect = (url, key) => { const a = createApi(url, key); setApi(a); setScreen("auth"); };
 
   const onAuth = async (tok, usr, prof) => {
+    sessionStorage.setItem("app_token", tok);
+    sessionStorage.setItem("app_profile", JSON.stringify(prof));
     setToken(tok); setProfile(prof);
     setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
     setScreen("app");
     await loadData(api, tok, prof.papel);
   };
-  const logout = () => { setScreen(demo ? "config" : "auth"); setDemo(false); setProfile(null); setToken(""); setRegistros([]); setEntregas([]); setBacklog([]); setViewAs(null); };
+  const logout = () => {
+    sessionStorage.removeItem("app_token");
+    sessionStorage.removeItem("app_profile");
+    setScreen(demo ? "config" : "auth"); setDemo(false); setProfile(null); setToken(""); setRegistros([]); setEntregas([]); setBacklog([]); setViewAs(null);
+  };
   const pendCount = entregas.filter((e) => e.status === "pendente").length;
   const handleViewAs = (id) => { setViewAs(id); setActiveTab("registrar"); };
   const exitViewAs = () => { setViewAs(null); setActiveTab("est"); };
