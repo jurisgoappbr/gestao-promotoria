@@ -105,83 +105,120 @@ function CrimeInput({ value, onChange, suggestions }) {
 
 /* ─── BACKLOG CARD ─── */
 function BacklogCard({ backlog, setBacklog, selectedDate, api, token, demo }) {
-  const blInicio = backlog.find((b) => b.data === selectedDate && b.momento === "inicio") || { pecas_corrigir: "", pecas_minhas: "", pecas_estagiarias: "" };
-  const blFim    = backlog.find((b) => b.data === selectedDate && b.momento === "fim")    || { pecas_corrigir: "", pecas_minhas: "", pecas_estagiarias: "" };
+  const empty = { pecas_corrigir: "", pecas_minhas: "", pecas_estagiarias: "" };
 
-  const hasInicio = !!backlog.find((b) => b.data === selectedDate && b.momento === "inicio");
-  const hasFim    = !!backlog.find((b) => b.data === selectedDate && b.momento === "fim");
+  // Estado local para edição — inicializado com o que já existe no banco
+  const blInicio = backlog.find((b) => b.data === selectedDate && b.momento === "inicio");
+  const blFim    = backlog.find((b) => b.data === selectedDate && b.momento === "fim");
 
-  const updateBL = async (momento, fld, val) => {
-    const v = val === "" ? null : parseInt(val) || 0;
+  const [localInicio, setLocalInicio] = useState({ pecas_corrigir: blInicio?.pecas_corrigir ?? "", pecas_minhas: blInicio?.pecas_minhas ?? "", pecas_estagiarias: blInicio?.pecas_estagiarias ?? "" });
+  const [localFim,    setLocalFim]    = useState({ pecas_corrigir: blFim?.pecas_corrigir ?? "",    pecas_minhas: blFim?.pecas_minhas ?? "",    pecas_estagiarias: blFim?.pecas_estagiarias ?? "" });
+  const [savingInicio, setSavingInicio] = useState(false);
+  const [savingFim,    setSavingFim]    = useState(false);
+  const [savedInicio,  setSavedInicio]  = useState(false);
+  const [savedFim,     setSavedFim]     = useState(false);
+
+  // Sincroniza estado local quando a data muda ou o backlog é atualizado externamente
+  useEffect(() => {
+    const i = backlog.find((b) => b.data === selectedDate && b.momento === "inicio");
+    const f = backlog.find((b) => b.data === selectedDate && b.momento === "fim");
+    setLocalInicio({ pecas_corrigir: i?.pecas_corrigir ?? "", pecas_minhas: i?.pecas_minhas ?? "", pecas_estagiarias: i?.pecas_estagiarias ?? "" });
+    setLocalFim({    pecas_corrigir: f?.pecas_corrigir ?? "", pecas_minhas: f?.pecas_minhas ?? "", pecas_estagiarias: f?.pecas_estagiarias ?? "" });
+  }, [selectedDate, backlog.length]);
+
+  const saveMomento = async (momento) => {
+    const local = momento === "inicio" ? localInicio : localFim;
+    const setSaving = momento === "inicio" ? setSavingInicio : setSavingFim;
+    const setSaved  = momento === "inicio" ? setSavedInicio  : setSavedFim;
+    const payload = {
+      data: selectedDate,
+      momento,
+      pecas_corrigir:    parseInt(local.pecas_corrigir)    || 0,
+      pecas_minhas:      parseInt(local.pecas_minhas)      || 0,
+      pecas_estagiarias: parseInt(local.pecas_estagiarias) || 0,
+    };
+    setSaving(true);
     const ex = backlog.find((b) => b.data === selectedDate && b.momento === momento);
-    if (ex) {
-      const updated = { ...ex, [fld]: v ?? 0 };
-      setBacklog(backlog.map((b) => (b.data === selectedDate && b.momento === momento) ? updated : b));
-      if (!demo) try { await api.patch("backlog", ex.id, { [fld]: v ?? 0 }, token); } catch (e) {}
-    } else {
-      const newBL = { data: selectedDate, momento, pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0, [fld]: v ?? 0 };
-      if (!demo) {
-        try {
-          const result = await api.post("backlog", newBL, token);
+    if (!demo) {
+      try {
+        if (ex) {
+          await api.patch("backlog", ex.id, { pecas_corrigir: payload.pecas_corrigir, pecas_minhas: payload.pecas_minhas, pecas_estagiarias: payload.pecas_estagiarias }, token);
+          setBacklog(backlog.map((b) => (b.data === selectedDate && b.momento === momento) ? { ...b, ...payload } : b));
+        } else {
+          const result = await api.post("backlog", payload, token);
           const row = Array.isArray(result) ? result[0] : result;
           setBacklog([...backlog, row]);
-        } catch (e) {
-          setBacklog([...backlog, { ...newBL, id: Date.now() }]);
         }
+      } catch (e) {
+        if (ex) {
+          setBacklog(backlog.map((b) => (b.data === selectedDate && b.momento === momento) ? { ...b, ...payload } : b));
+        } else {
+          setBacklog([...backlog, { ...payload, id: Date.now() }]);
+        }
+      }
+    } else {
+      if (ex) {
+        setBacklog(backlog.map((b) => (b.data === selectedDate && b.momento === momento) ? { ...b, ...payload } : b));
       } else {
-        setBacklog([...backlog, { ...newBL, id: Date.now() }]);
+        setBacklog([...backlog, { ...payload, id: Date.now() }]);
       }
     }
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
 
-  // Calcula delta (fim - inicio); null se algum dos dois não existe
+  const hasInicio = !!blInicio;
+  const hasFim    = !!blFim;
+
+  // Calcula delta usando os valores salvos no backlog (não o estado local)
   const delta = (field) => {
     if (!hasInicio || !hasFim) return null;
-    const i = blInicio[field] ?? 0;
-    const f = blFim[field] ?? 0;
-    return f - i;
+    return (blFim[field] ?? 0) - (blInicio[field] ?? 0);
   };
 
   const DeltaBadge = ({ field }) => {
     const d = delta(field);
     if (d === null) return <span style={{ fontSize: 10, color: "#cbd5e1" }}>—</span>;
-    const neg = d < 0;
-    const zer = d === 0;
+    const neg = d < 0; const zer = d === 0;
     return (
-      <span style={{
-        fontSize: 10.5, fontWeight: 700, padding: "1px 6px", borderRadius: 99,
-        background: neg ? "#d1fae5" : zer ? "#f1f5f9" : "#fee2e2",
-        color: neg ? "#065f46" : zer ? "#64748b" : "#991b1b",
-      }}>
+      <span style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 6px", borderRadius: 99, background: neg ? "#d1fae5" : zer ? "#f1f5f9" : "#fee2e2", color: neg ? "#065f46" : zer ? "#64748b" : "#991b1b" }}>
         {neg ? `▼ ${Math.abs(d)}` : zer ? "=" : `▲ ${d}`}
       </span>
     );
   };
 
   const fields = [
-    { key: "pecas_corrigir",   label: "Corrigir" },
-    { key: "pecas_minhas",     label: "Minhas" },
+    { key: "pecas_corrigir",    label: "Corrigir" },
+    { key: "pecas_minhas",      label: "Minhas" },
     { key: "pecas_estagiarias", label: "Estagiárias" },
   ];
 
-  const Section = ({ momento, label, icon: Icon, color, bl }) => (
+  const Section = ({ momento, label, icon: Icon, color, local, setLocal, saving, saved }) => (
     <div style={{ flex: 1, minWidth: 200 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8, fontSize: 11.5, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.05em" }}>
         <Icon size={13} /> {label}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         {fields.map((f) => (
           <Field key={f.key} label={f.label} style={{ marginBottom: 0, flex: 1 }}>
             <input
               type="number" min="0"
               style={{ ...S.input, textAlign: "center" }}
-              value={bl[f.key] ?? ""}
-              onChange={(e) => updateBL(momento, f.key, e.target.value)}
+              value={local[f.key]}
+              onChange={(e) => setLocal({ ...local, [f.key]: e.target.value })}
               placeholder="0"
             />
           </Field>
         ))}
       </div>
+      <button
+        style={{ ...S.btn(saved ? "success" : "primary"), fontSize: 11, padding: "5px 10px", width: "100%", justifyContent: "center" }}
+        onClick={() => saveMomento(momento)}
+        disabled={saving}
+      >
+        {saving ? "Salvando..." : saved ? <><Check size={12} /> Salvo</> : <><Save size={12} /> Salvar {label}</>}
+      </button>
     </div>
   );
 
@@ -189,14 +226,14 @@ function BacklogCard({ backlog, setBacklog, selectedDate, api, token, demo }) {
     <div style={{ ...S.card, padding: "14px 16px" }}>
       <div style={{ fontSize: 11.5, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Backlog</div>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <Section momento="inicio" label="Início do dia" icon={Sunrise} color="#f59e0b" bl={blInicio} />
+        <Section momento="inicio" label="Início do dia" icon={Sunrise} color="#f59e0b" local={localInicio} setLocal={setLocalInicio} saving={savingInicio} saved={savedInicio} />
 
         {/* Divisor */}
         <div style={{ width: 1, background: "#e2e8f0", alignSelf: "stretch", marginTop: 20 }} />
 
-        <Section momento="fim" label="Fim do dia" icon={Sunset} color="#6366f1" bl={blFim} />
+        <Section momento="fim" label="Fim do dia" icon={Sunset} color="#6366f1" local={localFim} setLocal={setLocalFim} saving={savingFim} saved={savedFim} />
 
-        {/* Delta */}
+        {/* Delta — só aparece quando ambos os snapshots estão salvos no banco */}
         {(hasInicio || hasFim) && (
           <div style={{ minWidth: 140 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8, fontSize: 11.5, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: "0.05em" }}>
