@@ -90,9 +90,27 @@ function DynSelect({ value, onChange, options, onAdd, placeholder, style: st }) 
     <option value="__add">+ Adicionar novo...</option>
   </select>);
 }
-function CrimeInput({ value, onChange, suggestions }) {
-  const lid = useMemo(() => "cr" + Math.random().toString(36).slice(2, 7), []);
-  return (<><input list={lid} style={S.input} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Ex: 129, § 13" /><datalist id={lid}>{suggestions.map((s) => <option key={s} value={s} />)}</datalist></>);
+function CrimeInput({ value, onChange, suggestions, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [nv, setNv] = useState("");
+  const ref = useState(null);
+  const filtered = suggestions.filter((s) => s.toLowerCase().includes((search || value || "").toLowerCase()));
+  if (adding) return (<div style={{ display: "flex", gap: 4 }}>
+    <input style={{ ...S.input, flex: 1 }} value={nv} onChange={(e) => setNv(e.target.value)} placeholder="Ex: 121 (homicídio)" autoFocus onKeyDown={(e) => { if (e.key === "Enter" && nv.trim()) { onAdd?.(nv.trim()); onChange(nv.trim()); setAdding(false); setNv(""); } if (e.key === "Escape") { setAdding(false); setNv(""); } }} />
+    <button style={S.btn("success")} onClick={() => { if (nv.trim()) { onAdd?.(nv.trim()); onChange(nv.trim()); setAdding(false); setNv(""); } }}><Check size={13} /></button>
+    <button style={S.btn("ghost")} onClick={() => { setAdding(false); setNv(""); }}><X size={13} /></button>
+  </div>);
+  return (<div style={{ position: "relative" }}>
+    <input style={S.input} value={open ? search : value} placeholder="Buscar ou selecionar crime..." onFocus={() => { setOpen(true); setSearch(value || ""); }} onChange={(e) => { setSearch(e.target.value); setOpen(true); }} onBlur={() => setTimeout(() => setOpen(false), 200)} />
+    {value && !open && <span style={{ position: "absolute", right: 8, top: 7, cursor: "pointer", color: "#94a3b8", fontSize: 13 }} onMouseDown={(e) => { e.preventDefault(); onChange(""); }}>×</span>}
+    {open && <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, maxHeight: 180, overflowY: "auto", zIndex: 50, boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}>
+      {filtered.map((s) => <div key={s} style={{ padding: "6px 10px", fontSize: 12.5, cursor: "pointer", background: s === value ? "#eff6ff" : "transparent" }} onMouseDown={(e) => { e.preventDefault(); onChange(s); setOpen(false); }}>{s}</div>)}
+      {filtered.length === 0 && <div style={{ padding: "6px 10px", fontSize: 12, color: "#94a3b8" }}>Nenhum resultado</div>}
+      <div style={{ padding: "6px 10px", fontSize: 12, color: "#2563eb", cursor: "pointer", borderTop: "1px solid #f1f5f9", fontWeight: 600 }} onMouseDown={(e) => { e.preventDefault(); setOpen(false); setAdding(true); setNv(search || ""); }}>+ Adicionar novo crime...</div>
+    </div>}
+  </div>);
 }
 
 function ConfigScreen({ onConnect, onDemo }) {
@@ -187,46 +205,17 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const dayRegs = registros.filter((r) => r.data_trabalho === selectedDate);
   const pendentes = entregas.filter((e) => e.status === "pendente").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
-  const EMPTY_BL = { pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0, pecas_corrigir_fim: 0, pecas_minhas_fim: 0, pecas_estagiarias_fim: 0 };
-  const dayBL = backlog.find((b) => b.data === selectedDate) || EMPTY_BL;
+  const dayBL = backlog.find((b) => b.data === selectedDate) || { pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0 };
 
-  const initBlFields = (bl) => ({
-    ini_corrigir:    String(bl.pecas_corrigir      ?? ""),
-    ini_minhas:      String(bl.pecas_minhas        ?? ""),
-    ini_estagiarias: String(bl.pecas_estagiarias   ?? ""),
-    fim_corrigir:    String(bl.pecas_corrigir_fim  ?? ""),
-    fim_minhas:      String(bl.pecas_minhas_fim    ?? ""),
-    fim_estagiarias: String(bl.pecas_estagiarias_fim ?? ""),
-  });
-
-  const [blLocal, setBlLocal] = useState(initBlFields(EMPTY_BL));
-  const [blSavingIni, setBlSavingIni] = useState(false);
-  const [blSavingFim, setBlSavingFim] = useState(false);
-  const [blSavedIni, setBlSavedIni] = useState(false);
-  const [blSavedFim, setBlSavedFim] = useState(false);
-
-  useEffect(() => {
-    setBlLocal(initBlFields(dayBL));
-    setBlSavedIni(false);
-    setBlSavedFim(false);
-  }, [selectedDate, backlog.length]); // eslint-disable-line
-
-  const saveBL = async (momento) => {
-    const isIni = momento === "ini";
-    isIni ? setBlSavingIni(true) : setBlSavingFim(true);
-    const payload = isIni
-      ? { pecas_corrigir:     parseInt(blLocal.ini_corrigir)    || 0,
-          pecas_minhas:       parseInt(blLocal.ini_minhas)      || 0,
-          pecas_estagiarias:  parseInt(blLocal.ini_estagiarias) || 0 }
-      : { pecas_corrigir_fim:    parseInt(blLocal.fim_corrigir)    || 0,
-          pecas_minhas_fim:      parseInt(blLocal.fim_minhas)      || 0,
-          pecas_estagiarias_fim: parseInt(blLocal.fim_estagiarias) || 0 };
+  const updateBL = async (fld, val) => {
+    const v = parseInt(val) || 0;
     const ex = backlog.find((b) => b.data === selectedDate);
     if (ex) {
-      if (!demo) try { await sb.from("backlog").update(payload).eq("id", ex.id); } catch (e) {}
-      setBacklog(backlog.map((b) => b.data === selectedDate ? { ...b, ...payload } : b));
+      const updated = { ...ex, [fld]: v };
+      setBacklog(backlog.map((b) => b.data === selectedDate ? updated : b));
+      if (!demo) try { await sb.from("backlog").update({ [fld]: v }).eq("id", ex.id); } catch (e) {}
     } else {
-      const newBL = { data: selectedDate, ...EMPTY_BL, ...payload };
+      const newBL = { data: selectedDate, pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0, [fld]: v };
       if (!demo) {
         try {
           const { data } = await sb.from("backlog").insert(newBL).select();
@@ -234,8 +223,6 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         } catch (e) { setBacklog([...backlog, { ...newBL, id: Date.now() }]); }
       } else { setBacklog([...backlog, { ...newBL, id: Date.now() }]); }
     }
-    if (isIni) { setBlSavingIni(false); setBlSavedIni(true); setTimeout(() => setBlSavedIni(false), 2500); }
-    else        { setBlSavingFim(false); setBlSavedFim(true); setTimeout(() => setBlSavedFim(false), 2500); }
   };
 
   const addOpt = async (campo, valor) => {
@@ -314,28 +301,11 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
       </div>
       <button style={S.btn("primary")} onClick={() => { setForm(empty); setEditId(null); setCorrigindo(null); setShowForm(true); }}><Plus size={14} /> Novo Registro</button>
     </div>
-    <div style={{ ...S.card, padding: "14px 16px" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>Backlog do dia</div>
-      {/* Linha início */}
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", whiteSpace: "nowrap", paddingBottom: 9, width: 52 }}>Início</span>
-        <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.ini_corrigir} onChange={(e) => setBlLocal({ ...blLocal, ini_corrigir: e.target.value })} /></Field>
-        <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.ini_minhas} onChange={(e) => setBlLocal({ ...blLocal, ini_minhas: e.target.value })} /></Field>
-        <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.ini_estagiarias} onChange={(e) => setBlLocal({ ...blLocal, ini_estagiarias: e.target.value })} /></Field>
-        <button style={{ ...S.btn(blSavedIni ? "success" : "primary"), marginBottom: 2, whiteSpace: "nowrap" }} onClick={() => saveBL("ini")} disabled={blSavingIni}>
-          {blSavedIni ? <><Check size={13}/> Salvo</> : <><Save size={13}/> Salvar</>}
-        </button>
-      </div>
-      {/* Linha fim */}
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", whiteSpace: "nowrap", paddingBottom: 9, width: 52 }}>Fim</span>
-        <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.fim_corrigir} onChange={(e) => setBlLocal({ ...blLocal, fim_corrigir: e.target.value })} /></Field>
-        <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.fim_minhas} onChange={(e) => setBlLocal({ ...blLocal, fim_minhas: e.target.value })} /></Field>
-        <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.fim_estagiarias} onChange={(e) => setBlLocal({ ...blLocal, fim_estagiarias: e.target.value })} /></Field>
-        <button style={{ ...S.btn(blSavedFim ? "success" : "primary"), marginBottom: 2, whiteSpace: "nowrap" }} onClick={() => saveBL("fim")} disabled={blSavingFim}>
-          {blSavedFim ? <><Check size={13}/> Salvo</> : <><Save size={13}/> Salvar</>}
-        </button>
-      </div>
+    <div style={{ ...S.card, display: "flex", gap: 14, alignItems: "center", padding: "12px 16px" }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", whiteSpace: "nowrap" }}>Backlog:</span>
+      <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_corrigir} onChange={(e) => updateBL("pecas_corrigir", e.target.value)} /></Field>
+      <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_minhas} onChange={(e) => updateBL("pecas_minhas", e.target.value)} /></Field>
+      <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_estagiarias} onChange={(e) => updateBL("pecas_estagiarias", e.target.value)} /></Field>
     </div>
     {pendentes.length > 0 && <div style={{ ...S.card, borderLeft: "4px solid #f59e0b" }}>
       <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}><Bell size={14} color="#f59e0b" /> Pendentes de Correção ({pendentes.length})</h3>
@@ -369,7 +339,7 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         <Field label="Data da vista" style={{ flex: 1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e) => upd("data_vista", e.target.value)} /></Field>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
-        <Field label="Crime" style={{ flex: 2 }}><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} /></Field>
+        <Field label="Crime" style={{ flex: 2 }}><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} onAdd={(v) => { if (!crimes.includes(v)) setCrimes([...crimes, v]); addOpt("crime", v); }} /></Field>
         <Field label="Folhas" style={{ flex: 1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e) => upd("num_folhas", e.target.value)} /></Field>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
@@ -464,7 +434,7 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
       <Field label="Número do procedimento *"><input style={S.input} value={form.numero_procedimento} onChange={(e) => upd("numero_procedimento", e.target.value)} placeholder="0000000-00.0000.0.00.0000" /></Field>
       <Field label="Tipo do procedimento *"><DynSelect value={form.tipo_procedimento} onChange={(v) => upd("tipo_procedimento", v)} options={opts.tipo_procedimento} onAdd={(v) => setOpts({ ...opts, tipo_procedimento: [...opts.tipo_procedimento, v] })} /></Field>
       <Field label="Tipo de manifestação *"><DynSelect value={form.tipo_manifestacao} onChange={(v) => upd("tipo_manifestacao", v)} options={opts.tipo_manifestacao} onAdd={(v) => setOpts({ ...opts, tipo_manifestacao: [...opts.tipo_manifestacao, v] })} /></Field>
-      <Field label="Crime apurado"><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} /></Field>
+      <Field label="Crime apurado"><CrimeInput value={form.crime} onChange={(v) => upd("crime", v)} suggestions={crimes} onAdd={(v) => { if (!crimes.includes(v)) { setCrimes([...crimes, v]); if (!demo) try { sb.from("opcoes").insert({ campo: "crime", valor: v }); } catch(e) {} } }} /></Field>
       <div style={{ display: "flex", gap: 10 }}>
         <Field label="Data da vista" style={{ flex: 1 }}><input type="date" style={S.input} value={form.data_vista} onChange={(e) => upd("data_vista", e.target.value)} /></Field>
         <Field label="Nº de folhas" style={{ flex: 1 }}><input type="number" style={S.input} value={form.num_folhas} onChange={(e) => upd("num_folhas", e.target.value)} /></Field>
@@ -637,27 +607,6 @@ export default function App() {
     setDemo(false);
   };
 
-  // ─── Restaura sessão salva ao carregar a página (F5) ───
-  useEffect(() => {
-    if (!sb || demo) return;
-    let mounted = true;
-    sb.auth.getSession().then(async ({ data: { session } }) => {
-      if (!mounted) return;
-      if (session?.user) {
-        const { data: profs } = await sb.from("profiles").select("*").eq("id", session.user.id);
-        const prof = profs?.[0];
-        if (prof) {
-          setProfile(prof);
-          setSessionMsg("");
-          setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
-          setScreen("app");
-          await loadData(sb, prof.papel);
-        }
-      }
-    });
-    return () => { mounted = false; };
-  }, [sb]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ─── Detecta expiração de sessão via SDK ───
   useEffect(() => {
     if (!sb || demo) return;
@@ -691,9 +640,10 @@ export default function App() {
       });
       setOpts(optsMap);
       const crimeSet = new Set();
+      (optsRes.data || []).forEach((o) => { if (o.campo === "crime") crimeSet.add(o.valor); });
       (regsRes.data || []).forEach((r) => { if (r.crime) crimeSet.add(r.crime); });
       (entsRes.data || []).forEach((e) => { if (e.crime) crimeSet.add(e.crime); });
-      setCrimes([...crimeSet]);
+      setCrimes([...crimeSet].sort());
     } catch (e) { console.error("Erro ao carregar dados:", e); }
     setLoading(false);
   };
