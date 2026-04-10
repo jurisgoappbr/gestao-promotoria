@@ -188,16 +188,33 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
   const dayRegs = registros.filter((r) => r.data_trabalho === selectedDate);
   const pendentes = entregas.filter((e) => e.status === "pendente").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
   const dayBL = backlog.find((b) => b.data === selectedDate) || { pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0 };
+  const [blLocal, setBlLocal] = useState({ pecas_corrigir: "", pecas_minhas: "", pecas_estagiarias: "" });
+  const [blSaving, setBlSaving] = useState(false);
+  const [blSaved, setBlSaved] = useState(false);
 
-  const updateBL = async (fld, val) => {
-    const v = parseInt(val) || 0;
+  // Sincroniza campos locais sempre que a data ou o backlog carregado mudar
+  useEffect(() => {
+    setBlLocal({
+      pecas_corrigir: String(dayBL.pecas_corrigir ?? ""),
+      pecas_minhas: String(dayBL.pecas_minhas ?? ""),
+      pecas_estagiarias: String(dayBL.pecas_estagiarias ?? ""),
+    });
+    setBlSaved(false);
+  }, [selectedDate, backlog.length]); // eslint-disable-line
+
+  const saveBL = async () => {
+    setBlSaving(true);
+    const payload = {
+      pecas_corrigir: parseInt(blLocal.pecas_corrigir) || 0,
+      pecas_minhas: parseInt(blLocal.pecas_minhas) || 0,
+      pecas_estagiarias: parseInt(blLocal.pecas_estagiarias) || 0,
+    };
     const ex = backlog.find((b) => b.data === selectedDate);
     if (ex) {
-      const updated = { ...ex, [fld]: v };
-      setBacklog(backlog.map((b) => b.data === selectedDate ? updated : b));
-      if (!demo) try { await sb.from("backlog").update({ [fld]: v }).eq("id", ex.id); } catch (e) {}
+      if (!demo) try { await sb.from("backlog").update(payload).eq("id", ex.id); } catch (e) {}
+      setBacklog(backlog.map((b) => b.data === selectedDate ? { ...b, ...payload } : b));
     } else {
-      const newBL = { data: selectedDate, pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0, [fld]: v };
+      const newBL = { data: selectedDate, ...payload };
       if (!demo) {
         try {
           const { data } = await sb.from("backlog").insert(newBL).select();
@@ -205,6 +222,9 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         } catch (e) { setBacklog([...backlog, { ...newBL, id: Date.now() }]); }
       } else { setBacklog([...backlog, { ...newBL, id: Date.now() }]); }
     }
+    setBlSaving(false);
+    setBlSaved(true);
+    setTimeout(() => setBlSaved(false), 2500);
   };
 
   const addOpt = async (campo, valor) => {
@@ -283,11 +303,16 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
       </div>
       <button style={S.btn("primary")} onClick={() => { setForm(empty); setEditId(null); setCorrigindo(null); setShowForm(true); }}><Plus size={14} /> Novo Registro</button>
     </div>
-    <div style={{ ...S.card, display: "flex", gap: 14, alignItems: "center", padding: "12px 16px" }}>
-      <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", whiteSpace: "nowrap" }}>Backlog:</span>
-      <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_corrigir} onChange={(e) => updateBL("pecas_corrigir", e.target.value)} /></Field>
-      <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_minhas} onChange={(e) => updateBL("pecas_minhas", e.target.value)} /></Field>
-      <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={dayBL.pecas_estagiarias} onChange={(e) => updateBL("pecas_estagiarias", e.target.value)} /></Field>
+    <div style={{ ...S.card, padding: "12px 16px" }}>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", whiteSpace: "nowrap", paddingBottom: 8 }}>Backlog:</span>
+        <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.pecas_corrigir} onChange={(e) => setBlLocal({ ...blLocal, pecas_corrigir: e.target.value })} /></Field>
+        <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.pecas_minhas} onChange={(e) => setBlLocal({ ...blLocal, pecas_minhas: e.target.value })} /></Field>
+        <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.pecas_estagiarias} onChange={(e) => setBlLocal({ ...blLocal, pecas_estagiarias: e.target.value })} /></Field>
+        <button style={{ ...S.btn(blSaved ? "success" : "primary"), marginBottom: 2, whiteSpace: "nowrap" }} onClick={saveBL} disabled={blSaving}>
+          {blSaved ? <><Check size={13}/> Salvo</> : <><Save size={13}/> Salvar Backlog</>}
+        </button>
+      </div>
     </div>
     {pendentes.length > 0 && <div style={{ ...S.card, borderLeft: "4px solid #f59e0b" }}>
       <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}><Bell size={14} color="#f59e0b" /> Pendentes de Correção ({pendentes.length})</h3>
@@ -431,11 +456,13 @@ function InternReg({ entregas, setEntregas, opts, setOpts, crimes, setCrimes, us
 
 /* ─── INTERN: HISTÓRICO ─── */
 function InternHist({ entregas, registros, userId }) {
-  const [obsModal, setObsModal] = useState(null); // { proc, obs, elogio }
+  const [expanded, setExpanded] = useState({});
+  const toggleExp = (id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const getReg = (entregaId) => {
+  // Busca o registro correspondente à entrega para pegar obs_estagiarias
+  const getObs = (entregaId) => {
     const reg = registros.find((r) => r.entrega_id === entregaId);
-    return { obs: reg?.obs_estagiarias || null, elogio: reg?.feedback_tipo === "elogio" };
+    return reg?.obs_estagiarias || null;
   };
 
   const mine = entregas.filter((e) => e.estagiaria_id === userId).sort((a, b) => (b.data_entrega + b.hora_entrega).localeCompare(a.data_entrega + a.hora_entrega));
@@ -445,39 +472,24 @@ function InternHist({ entregas, registros, userId }) {
     <div style={S.card}><table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead><tr><th style={S.th}>Data</th><th style={S.th}>Procedimento</th><th style={S.th}>Tipo</th><th style={S.th}>Manifestação</th><th style={S.th}>Status</th><th style={S.th}>Observações</th></tr></thead>
       <tbody>{mine.map((e) => {
-        const { obs, elogio } = getReg(e.id);
+        const obs = getObs(e.id);
+        const isExp = expanded[e.id];
         return (<tr key={e.id}>
           <td style={S.td}>{fmtDate(e.data_entrega)}</td>
           <td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{e.numero_procedimento}</td>
           <td style={S.td}><span style={S.badge("#1e40af","#dbeafe")}>{e.tipo_procedimento}</span></td>
           <td style={S.td}><span style={S.badge("#065f46","#d1fae5")}>{e.tipo_manifestacao}</span></td>
           <td style={S.td}>{e.status==="pendente"?<span style={S.badge("#92400e","#fef3c7")}>Pendente</span>:<span style={S.badge("#065f46","#d1fae5")}>Corrigido</span>}</td>
-          <td style={{...S.td, maxWidth: 220}}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              {elogio && <span title="Parabéns!" style={{ fontSize: 14, lineHeight: 1, flexShrink: 0 }}>👏</span>}
-              {obs ? (<>
-                <span style={{ fontSize: 12, color: "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>{obs}</span>
-                <Eye size={13} style={{ cursor: "pointer", color: "#2563eb", flexShrink: 0 }} title="Ver observação completa" onClick={() => setObsModal({ proc: e.numero_procedimento, obs, elogio })} />
-              </>) : (!elogio && <span style={{ color: "#94a3b8" }}>—</span>)}
-            </div>
+          <td style={{...S.td, maxWidth: 300}}>
+            {obs ? (<div style={{ display: "flex", alignItems: "flex-start", gap: 4 }}>
+              <span style={{ fontSize: 12, color: "#1e293b", whiteSpace: isExp ? "pre-wrap" : "nowrap", overflow: isExp ? "visible" : "hidden", textOverflow: isExp ? "clip" : "ellipsis", flex: 1, minWidth: 0 }}>{obs}</span>
+              <span style={{ fontSize: 13, color: "#94a3b8", cursor: "pointer", userSelect: "none", flexShrink: 0, lineHeight: "18px" }} title={isExp ? "Recolher" : "Expandir"} onClick={() => toggleExp(e.id)}>{isExp ? "▲" : "▼"}</span>
+            </div>) : <span style={{ color: "#94a3b8" }}>—</span>}
           </td>
         </tr>);
       })}
       {mine.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:24}}>Nenhuma entrega registrada</td></tr>}</tbody>
-    </table></div>
-    {obsModal && (
-      <Modal title={`Observações — ${obsModal.proc}`} onClose={() => setObsModal(null)}>
-        {obsModal.elogio && <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
-          <span style={{ fontSize: 20 }}>👏</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#065f46" }}>Igor elogiou essa peça!</span>
-        </div>}
-        {obsModal.obs && <p style={{ fontSize: 13.5, color: "#1e293b", lineHeight: 1.65, whiteSpace: "pre-wrap", margin: 0 }}>{obsModal.obs}</p>}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-          <button style={S.btn("ghost")} onClick={() => setObsModal(null)}>Fechar</button>
-        </div>
-      </Modal>
-    )}
-  </div>);
+    </table></div></div>);
 }
 
 /* ─── ADMIN: ESTAGIÁRIAS ─── */
@@ -601,6 +613,27 @@ export default function App() {
     setViewAs(null); setActiveTab("");
     setDemo(false);
   };
+
+  // ─── Restaura sessão salva ao carregar a página (F5) ───
+  useEffect(() => {
+    if (!sb || demo) return;
+    let mounted = true;
+    sb.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return;
+      if (session?.user) {
+        const { data: profs } = await sb.from("profiles").select("*").eq("id", session.user.id);
+        const prof = profs?.[0];
+        if (prof) {
+          setProfile(prof);
+          setSessionMsg("");
+          setActiveTab(prof.papel === "admin" ? "dia" : "registrar");
+          setScreen("app");
+          await loadData(sb, prof.papel);
+        }
+      }
+    });
+    return () => { mounted = false; };
+  }, [sb]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Detecta expiração de sessão via SDK ───
   useEffect(() => {
