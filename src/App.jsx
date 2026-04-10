@@ -187,34 +187,46 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
   const upd = (k, v) => setForm({ ...form, [k]: v });
   const dayRegs = registros.filter((r) => r.data_trabalho === selectedDate);
   const pendentes = entregas.filter((e) => e.status === "pendente").sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0));
-  const dayBL = backlog.find((b) => b.data === selectedDate) || { pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0 };
-  const [blLocal, setBlLocal] = useState({ pecas_corrigir: "", pecas_minhas: "", pecas_estagiarias: "" });
-  const [blSaving, setBlSaving] = useState(false);
-  const [blSaved, setBlSaved] = useState(false);
+  const EMPTY_BL = { pecas_corrigir: 0, pecas_minhas: 0, pecas_estagiarias: 0, pecas_corrigir_fim: 0, pecas_minhas_fim: 0, pecas_estagiarias_fim: 0 };
+  const dayBL = backlog.find((b) => b.data === selectedDate) || EMPTY_BL;
 
-  // Sincroniza campos locais sempre que a data ou o backlog carregado mudar
+  const initBlFields = (bl) => ({
+    ini_corrigir:    String(bl.pecas_corrigir      ?? ""),
+    ini_minhas:      String(bl.pecas_minhas        ?? ""),
+    ini_estagiarias: String(bl.pecas_estagiarias   ?? ""),
+    fim_corrigir:    String(bl.pecas_corrigir_fim  ?? ""),
+    fim_minhas:      String(bl.pecas_minhas_fim    ?? ""),
+    fim_estagiarias: String(bl.pecas_estagiarias_fim ?? ""),
+  });
+
+  const [blLocal, setBlLocal] = useState(initBlFields(EMPTY_BL));
+  const [blSavingIni, setBlSavingIni] = useState(false);
+  const [blSavingFim, setBlSavingFim] = useState(false);
+  const [blSavedIni, setBlSavedIni] = useState(false);
+  const [blSavedFim, setBlSavedFim] = useState(false);
+
   useEffect(() => {
-    setBlLocal({
-      pecas_corrigir: String(dayBL.pecas_corrigir ?? ""),
-      pecas_minhas: String(dayBL.pecas_minhas ?? ""),
-      pecas_estagiarias: String(dayBL.pecas_estagiarias ?? ""),
-    });
-    setBlSaved(false);
+    setBlLocal(initBlFields(dayBL));
+    setBlSavedIni(false);
+    setBlSavedFim(false);
   }, [selectedDate, backlog.length]); // eslint-disable-line
 
-  const saveBL = async () => {
-    setBlSaving(true);
-    const payload = {
-      pecas_corrigir: parseInt(blLocal.pecas_corrigir) || 0,
-      pecas_minhas: parseInt(blLocal.pecas_minhas) || 0,
-      pecas_estagiarias: parseInt(blLocal.pecas_estagiarias) || 0,
-    };
+  const saveBL = async (momento) => {
+    const isIni = momento === "ini";
+    isIni ? setBlSavingIni(true) : setBlSavingFim(true);
+    const payload = isIni
+      ? { pecas_corrigir:     parseInt(blLocal.ini_corrigir)    || 0,
+          pecas_minhas:       parseInt(blLocal.ini_minhas)      || 0,
+          pecas_estagiarias:  parseInt(blLocal.ini_estagiarias) || 0 }
+      : { pecas_corrigir_fim:    parseInt(blLocal.fim_corrigir)    || 0,
+          pecas_minhas_fim:      parseInt(blLocal.fim_minhas)      || 0,
+          pecas_estagiarias_fim: parseInt(blLocal.fim_estagiarias) || 0 };
     const ex = backlog.find((b) => b.data === selectedDate);
     if (ex) {
       if (!demo) try { await sb.from("backlog").update(payload).eq("id", ex.id); } catch (e) {}
       setBacklog(backlog.map((b) => b.data === selectedDate ? { ...b, ...payload } : b));
     } else {
-      const newBL = { data: selectedDate, ...payload };
+      const newBL = { data: selectedDate, ...EMPTY_BL, ...payload };
       if (!demo) {
         try {
           const { data } = await sb.from("backlog").insert(newBL).select();
@@ -222,9 +234,8 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
         } catch (e) { setBacklog([...backlog, { ...newBL, id: Date.now() }]); }
       } else { setBacklog([...backlog, { ...newBL, id: Date.now() }]); }
     }
-    setBlSaving(false);
-    setBlSaved(true);
-    setTimeout(() => setBlSaved(false), 2500);
+    if (isIni) { setBlSavingIni(false); setBlSavedIni(true); setTimeout(() => setBlSavedIni(false), 2500); }
+    else        { setBlSavingFim(false); setBlSavedFim(true); setTimeout(() => setBlSavedFim(false), 2500); }
   };
 
   const addOpt = async (campo, valor) => {
@@ -303,14 +314,26 @@ function DiaTrabalho({ registros, setRegistros, entregas, setEntregas, backlog, 
       </div>
       <button style={S.btn("primary")} onClick={() => { setForm(empty); setEditId(null); setCorrigindo(null); setShowForm(true); }}><Plus size={14} /> Novo Registro</button>
     </div>
-    <div style={{ ...S.card, padding: "12px 16px" }}>
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", whiteSpace: "nowrap", paddingBottom: 8 }}>Backlog:</span>
-        <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.pecas_corrigir} onChange={(e) => setBlLocal({ ...blLocal, pecas_corrigir: e.target.value })} /></Field>
-        <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.pecas_minhas} onChange={(e) => setBlLocal({ ...blLocal, pecas_minhas: e.target.value })} /></Field>
-        <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.pecas_estagiarias} onChange={(e) => setBlLocal({ ...blLocal, pecas_estagiarias: e.target.value })} /></Field>
-        <button style={{ ...S.btn(blSaved ? "success" : "primary"), marginBottom: 2, whiteSpace: "nowrap" }} onClick={saveBL} disabled={blSaving}>
-          {blSaved ? <><Check size={13}/> Salvo</> : <><Save size={13}/> Salvar Backlog</>}
+    <div style={{ ...S.card, padding: "14px 16px" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>Backlog do dia</div>
+      {/* Linha início */}
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", whiteSpace: "nowrap", paddingBottom: 9, width: 52 }}>Início</span>
+        <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.ini_corrigir} onChange={(e) => setBlLocal({ ...blLocal, ini_corrigir: e.target.value })} /></Field>
+        <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.ini_minhas} onChange={(e) => setBlLocal({ ...blLocal, ini_minhas: e.target.value })} /></Field>
+        <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.ini_estagiarias} onChange={(e) => setBlLocal({ ...blLocal, ini_estagiarias: e.target.value })} /></Field>
+        <button style={{ ...S.btn(blSavedIni ? "success" : "primary"), marginBottom: 2, whiteSpace: "nowrap" }} onClick={() => saveBL("ini")} disabled={blSavingIni}>
+          {blSavedIni ? <><Check size={13}/> Salvo</> : <><Save size={13}/> Salvar</>}
+        </button>
+      </div>
+      {/* Linha fim */}
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", whiteSpace: "nowrap", paddingBottom: 9, width: 52 }}>Fim</span>
+        <Field label="Corrigir" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.fim_corrigir} onChange={(e) => setBlLocal({ ...blLocal, fim_corrigir: e.target.value })} /></Field>
+        <Field label="Minhas" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.fim_minhas} onChange={(e) => setBlLocal({ ...blLocal, fim_minhas: e.target.value })} /></Field>
+        <Field label="Estagiárias" style={{ marginBottom: 0, flex: 1 }}><input type="number" min="0" style={{ ...S.input, textAlign: "center" }} value={blLocal.fim_estagiarias} onChange={(e) => setBlLocal({ ...blLocal, fim_estagiarias: e.target.value })} /></Field>
+        <button style={{ ...S.btn(blSavedFim ? "success" : "primary"), marginBottom: 2, whiteSpace: "nowrap" }} onClick={() => saveBL("fim")} disabled={blSavingFim}>
+          {blSavedFim ? <><Check size={13}/> Salvo</> : <><Save size={13}/> Salvar</>}
         </button>
       </div>
     </div>
